@@ -470,16 +470,63 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
             </button>
           </div>
           {isPanelExpanded && (
-            <div className="px-6 pb-6 pt-2 space-y-5 animate-in slide-in-from-bottom-4">
-              <div className="border-t border-white/5 pt-4">
-                <div className="flex items-center justify-between bg-white/5 p-4 rounded-2xl mb-4">
-                  <span className="text-sm font-bold text-white">التمرير التلقائي</span>
-                  <button onClick={toggleAutoScroll} className={`w-12 h-6 rounded-full transition-all relative ${isAutoScrolling ? 'bg-emerald-500' : 'bg-gray-700'}`}><div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${isAutoScrolling ? 'left-7' : 'left-1'}`}></div></button>
+            <div className="px-6 pb-8 pt-2 space-y-6 animate-in slide-in-from-bottom-4 duration-500">
+              <div className="border-t border-white/5 pt-6 space-y-6">
+
+                {/* Recitation & Tafseer */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] text-emerald-400 font-black uppercase tracking-widest block">القارئ المفضل</label>
+                    <select
+                      value={selectedReciter}
+                      onChange={e => setSelectedReciter(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 p-3 rounded-2xl text-xs text-white outline-none focus:border-emerald-500/50 transition-all font-bold"
+                    >
+                      {RECITERS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] text-emerald-400 font-black uppercase tracking-widest block">كتاب التفسير</label>
+                    <select
+                      value={selectedTafseer}
+                      onChange={e => setSelectedTafseer(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 p-3 rounded-2xl text-xs text-white outline-none focus:border-emerald-500/50 transition-all font-bold"
+                    >
+                      {TAFSEER_EDITIONS.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2"><label className="text-[10px] text-gray-500 block">حجم الخط</label><div className="flex items-center justify-between bg-black/20 p-2 rounded-xl"><button onClick={() => setFontSize(s => Math.max(12, s - 2))} className="p-1"><Minus size={14} /></button><span className="font-bold text-emerald-400">{fontSize}</span><button onClick={() => setFontSize(s => Math.min(60, s + 2))} className="p-1"><Plus size={14} /></button></div></div>
-                  <div className="space-y-2"><label className="text-[10px] text-gray-500 block">تكرار الآية</label><select value={repeatCount} onChange={e => setRepeatCount(parseInt(e.target.value))} className="w-full bg-black/20 border border-white/5 p-2 rounded-xl text-xs outline-none">{[1, 2, 3, 5, 10].map(n => <option key={n} value={n}>{n === 1 ? 'مرة واحدة' : `${n} مرات`}</option>)}</select></div>
+
+                {/* Toggles & Numbers */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="flex items-center justify-between bg-white/5 p-4 rounded-2xl border border-white/5">
+                    <span className="text-xs font-bold text-white">التمرير التلقائي</span>
+                    <button onClick={toggleAutoScroll} className={`w-12 h-6 rounded-full transition-all relative ${isAutoScrolling ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-gray-700'}`}>
+                      <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${isAutoScrolling ? 'left-7' : 'left-1'}`}></div>
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col justify-center bg-white/5 p-4 rounded-2xl border border-white/5 gap-2">
+                    <label className="text-[10px] text-gray-500 font-black uppercase tracking-tighter">حجم الخط</label>
+                    <div className="flex items-center justify-between">
+                      <button onClick={() => setFontSize(s => Math.max(12, s - 2))} className="w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center text-white hover:bg-emerald-500/20"><Minus size={14} /></button>
+                      <span className="font-black text-emerald-400 text-sm">{fontSize}</span>
+                      <button onClick={() => setFontSize(s => Math.min(60, s + 2))} className="w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center text-white hover:bg-emerald-500/20"><Plus size={14} /></button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col justify-center bg-white/5 p-4 rounded-2xl border border-white/5 gap-2">
+                    <label className="text-[10px] text-gray-500 font-black uppercase tracking-tighter">تكرار الآية</label>
+                    <select
+                      value={repeatCount}
+                      onChange={e => setRepeatCount(parseInt(e.target.value))}
+                      className="bg-transparent text-white font-black text-sm outline-none cursor-pointer"
+                    >
+                      {[1, 2, 3, 5, 10].map(n => <option key={n} value={n} className="bg-slate-900">{n === 1 ? 'مرة واحدة' : `${n} مرات`}</option>)}
+                    </select>
+                  </div>
                 </div>
+
               </div>
             </div>
           )}
