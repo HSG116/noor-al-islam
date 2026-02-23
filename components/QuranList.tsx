@@ -247,6 +247,12 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
   }, [pageData]);
 
   useEffect(() => {
+    if (currentAudioIndex !== -1 && isPlaying) {
+      playAyahAtIndex(currentAudioIndex);
+    }
+  }, [selectedReciter]);
+
+  useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
     const handleEnded = () => {
