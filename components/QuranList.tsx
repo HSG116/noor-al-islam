@@ -267,7 +267,7 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
     };
     audio.addEventListener('ended', handleEnded);
     return () => audio.removeEventListener('ended', handleEnded);
-  }, [currentAudioIndex, pageAyahsList, repeatCount]);
+  }, [currentAudioIndex, pageAyahsList, repeatCount, selectedReciter]);
 
   const playAyahAtIndex = async (index: number) => {
     if (index < 0 || index >= pageAyahsList.length) return;
