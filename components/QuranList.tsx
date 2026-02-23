@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { fetchSurahs, fetchPageContent, getSurahForPage, getAyahAudioUrl, fetchTafseer, RECITERS, TAFSEER_EDITIONS } from '../services/quranService';
-import { plannerService } from '../services/plannerService'; 
+import { fetchSurahs, fetchPageContent, getSurahForPage, getAyahAudioUrl, fetchTafseer, RECITERS, TAFSEER_EDITIONS, SURAH_START_PAGES } from '../services/quranService';
+import { plannerService } from '../services/plannerService';
 import { progressService } from '../services/progressService';
+import { challengeService } from '../services/challengeService';
 import { Surah, UserProgress } from '../types';
-import { Search, ChevronLeft, ChevronRight, CheckCircle, Book, Play, Circle, Loader2, Pause, Type, BookOpen, Zap, Settings2, X, Minus, Plus, MoveDown, Repeat, BookOpenCheck, Sparkles, ArrowRight } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, CheckCircle, Book, Play, Circle, Loader2, Pause, Type, BookOpen, Zap, Settings2, X, Minus, Plus, MoveDown, Repeat, BookOpenCheck, Sparkles, ArrowRight, Flag } from 'lucide-react';
 
 interface QuranListProps {
-  onSelectSurah: (surah: Surah) => void;
+  onSelectSurah: (surah: Surah, pageNum?: number) => void;
   session: any;
   onBack: () => void;
 }
@@ -19,6 +20,7 @@ export const QuranList: React.FC<QuranListProps> = ({ onSelectSurah, session, on
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [userProgress, setUserProgress] = useState<UserProgress[]>([]);
+  const [activeChallenge, setActiveChallenge] = useState<any>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -29,6 +31,11 @@ export const QuranList: React.FC<QuranListProps> = ({ onSelectSurah, session, on
 
       const progress = await progressService.getAll(session?.user?.id);
       setUserProgress(progress);
+
+      if (session?.user) {
+        const challenge = await challengeService.getActiveUserChallenge(session.user.id);
+        setActiveChallenge(challenge);
+      }
       setLoading(false);
     };
     loadData();
@@ -50,31 +57,46 @@ export const QuranList: React.FC<QuranListProps> = ({ onSelectSurah, session, on
 
   return (
     <div className="max-w-4xl mx-auto pb-32 px-4 md:px-6">
+      {/* Active Challenge Quick Action */}
+      {activeChallenge && (
+        <div className="mb-8 animate-in slide-in-from-top duration-700">
+          <div className="glass-panel p-5 rounded-[2rem] border-emerald-500/30 bg-emerald-500/10 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500 flex items-center justify-center text-white shadow-lg shadow-emerald-900/50">
+                <Flag size={24} />
+              </div>
+              <div>
+                <h3 className="text-white font-black text-sm md:text-base">تحدي: {activeChallenge.challenge_details.title}</h3>
+                <p className="text-emerald-400 text-[10px] md:text-xs">وصلت إلى الصفحة {activeChallenge.last_page_read || 1} من {activeChallenge.challenge_details.total_pages}</p>
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                const { getSurahForPage } = await import('../services/quranService');
+                const page = activeChallenge.last_page_read || 1;
+                const surah = await getSurahForPage(page);
+                if (surah) onSelectSurah(surah, page);
+              }}
+              className="bg-emerald-500 hover:bg-emerald-400 text-white px-6 py-2.5 rounded-xl font-black text-xs transition-all active:scale-95 flex items-center gap-2"
+            >
+              إكمال التحدي
+              <ArrowRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* --- PREMIUM HERO HEADER --- */}
       <div className="relative pt-6 pb-10 text-center animate-in fade-in zoom-in duration-1000">
         <div className="absolute inset-0 bg-emerald-500/5 blur-[80px] rounded-full scale-110 pointer-events-none"></div>
-        
         <div className="relative z-10 space-y-4">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-widest mx-auto mb-2">
             <Sparkles size={14} className="animate-pulse" />
             <span>كتاب الله المسطور</span>
           </div>
-
           <div className="space-y-1">
-            <h1 className="text-4xl md:text-6xl font-black premium-text-gradient font-quran leading-tight drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
-              المصحف الشريف
-            </h1>
-            <p className="font-quran text-lg md:text-3xl text-emerald-100/40 opacity-80 tracking-wide">
-              بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ
-            </p>
-          </div>
-
-          <div className="flex items-center justify-center gap-3 opacity-60">
-             <div className="h-[1px] w-8 bg-gradient-to-r from-transparent to-emerald-500/40"></div>
-             <p className="text-gray-400 text-[10px] md:text-xs font-bold">
-               {surahs.length} سورة • 604 صفحة
-             </p>
-             <div className="h-[1px] w-8 bg-gradient-to-l from-transparent to-emerald-500/40"></div>
+            <h1 className="text-4xl md:text-6xl font-black premium-text-gradient font-quran leading-tight drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)]">المصحف الشريف</h1>
+            <p className="font-quran text-lg md:text-3xl text-emerald-100/40 opacity-80 tracking-wide">بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</p>
           </div>
         </div>
       </div>
@@ -101,52 +123,51 @@ export const QuranList: React.FC<QuranListProps> = ({ onSelectSurah, session, on
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 animate-in slide-in-from-bottom-8 duration-700">
           {filteredSurahs.map((surah) => {
-             const status = getStatus(surah.number);
-             return (
-            <div
-              key={surah.number}
-              onClick={() => onSelectSurah(surah)}
-              className="group glass-panel p-5 rounded-[2rem] flex items-center justify-between cursor-pointer active:scale-[0.98] transition-all border border-white/5 hover:border-emerald-500/30 hover:bg-emerald-500/[0.03] shadow-lg relative overflow-hidden"
-            >
-              <div className="absolute top-0 left-0 w-20 h-20 bg-emerald-500/5 rounded-full blur-2xl -translate-x-1/2 -translate-y-1/2 group-hover:bg-emerald-500/10 transition-colors"></div>
-
-              <div className="flex items-center gap-4 relative z-10">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center text-emerald-400 font-black text-lg transition-all group-hover:scale-110 group-hover:bg-emerald-500 group-hover:text-white group-hover:shadow-lg group-hover:shadow-emerald-900/50 group-hover:rotate-3">
-                  {surah.number}
+            const status = getStatus(surah.number);
+            return (
+              <div
+                key={surah.number}
+                onClick={() => onSelectSurah(surah)}
+                className="group glass-panel p-5 rounded-[2rem] flex items-center justify-between cursor-pointer active:scale-[0.98] transition-all border border-white/5 hover:border-emerald-500/30 hover:bg-emerald-500/[0.03] shadow-lg relative overflow-hidden"
+              >
+                <div className="absolute top-0 left-0 w-20 h-20 bg-emerald-500/5 rounded-full blur-2xl -translate-x-1/2 -translate-y-1/2 group-hover:bg-emerald-500/10 transition-colors"></div>
+                <div className="flex items-center gap-4 relative z-10">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center text-emerald-400 font-black text-lg transition-all group-hover:scale-110 group-hover:bg-emerald-500 group-hover:text-white group-hover:shadow-lg group-hover:shadow-emerald-900/50 group-hover:rotate-3">
+                    {surah.number}
+                  </div>
+                  <div>
+                    <h3 className="text-xl md:text-2xl font-bold text-white font-quran group-hover:text-emerald-300 transition-colors">{surah.name}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] text-slate-500 font-bold">{surah.numberOfAyahs} آية</span>
+                      <div className="w-1 h-1 bg-slate-700 rounded-full"></div>
+                      <span className="text-[10px] text-slate-500 font-bold">{surah.revelationType === 'Meccan' ? 'مكية' : 'مدنية'}</span>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-xl md:text-2xl font-bold text-white font-quran group-hover:text-emerald-300 transition-colors">{surah.name}</h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[10px] text-slate-500 font-bold">{surah.numberOfAyahs} آية</span>
-                    <div className="w-1 h-1 bg-slate-700 rounded-full"></div>
-                    <span className="text-[10px] text-slate-500 font-bold">{surah.revelationType === 'Meccan' ? 'مكية' : 'مدنية'}</span>
+                <div className="flex items-center gap-3 relative z-10">
+                  {status === 'completed' && <CheckCircle size={18} className="text-emerald-500" />}
+                  {status === 'in_progress' && <Circle size={18} className="text-amber-500 animate-pulse" />}
+                  <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-slate-600 group-hover:text-emerald-400 group-hover:bg-emerald-500/10 transition-all">
+                    <ChevronLeft size={24} />
                   </div>
                 </div>
               </div>
-
-              <div className="flex items-center gap-3 relative z-10">
-                 {status === 'completed' && <CheckCircle size={18} className="text-emerald-500" />}
-                 {status === 'in_progress' && <Circle size={18} className="text-amber-500 animate-pulse" />}
-                <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-slate-600 group-hover:text-emerald-400 group-hover:bg-emerald-500/10 transition-all">
-                  <ChevronLeft size={24} />
-                </div>
-              </div>
-            </div>
-          )})}
+            )
+          })}
         </div>
       )}
     </div>
   );
 };
 
-interface QuranReaderProps { 
-    initialPage: number;
-    onBack: () => void; 
-    session: any;
-    taskEndPage?: number | null; 
-    taskType?: string | null;
-    isAdvance?: boolean;
-    onFinishTask?: (type: string) => void;
+interface QuranReaderProps {
+  initialPage: number;
+  onBack: () => void;
+  session: any;
+  taskEndPage?: number | null;
+  taskType?: string | null;
+  isAdvance?: boolean;
+  onFinishTask?: (type: string) => void;
 }
 
 export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, session, taskEndPage, taskType, isAdvance, onFinishTask }) => {
@@ -155,63 +176,69 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
   const [loading, setLoading] = useState(true);
   const [primarySurah, setPrimarySurah] = useState<Surah | null>(null);
   const [status, setStatus] = useState<'not_started' | 'in_progress' | 'completed'>('not_started');
-  
-  const [fontSize, setFontSize] = useState(() => {
-    if (typeof window !== 'undefined') {
-        return window.innerWidth < 768 ? 18 : 24;
-    }
-    return 24;
-  });
+  const [activeChallenge, setActiveChallenge] = useState<any>(null);
 
+  const pageStartTimeRef = useRef<number>(Date.now());
+  const [fontSize, setFontSize] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 18 : 24));
   const [isAutoScrolling, setIsAutoScrolling] = useState(false);
   const [scrollSpeed, setScrollSpeed] = useState(2);
   const scrollRef = useRef<number | null>(null);
-  const [isPanelExpanded, setIsPanelExpanded] = useState(false); 
+  const [isPanelExpanded, setIsPanelExpanded] = useState(false);
   const playerRef = useRef<HTMLDivElement>(null);
-
-  const [selectedReciter, setSelectedReciter] = useState('Yasser_Ad-Dussary_128kbps'); 
   const [isPlaying, setIsPlaying] = useState(false);
-  const [activeAyahKey, setActiveAyahKey] = useState<string | null>(null); 
+  const [activeAyahKey, setActiveAyahKey] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [pageAyahsList, setPageAyahsList] = useState<{ key: string }[]>([]);
+  const [currentAudioIndex, setCurrentAudioIndex] = useState(-1);
   const [repeatCount, setRepeatCount] = useState(1);
   const currentRepeatRef = useRef(0);
-  
-  const [pageAyahsList, setPageAyahsList] = useState<{key: string}[]>([]);
-  const [currentAudioIndex, setCurrentAudioIndex] = useState(-1);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  const [tafseerModal, setTafseerModal] = useState<{title: string, text: string} | null>(null);
+  const [selectedReciter, setSelectedReciter] = useState('Yasser_Ad-Dussary_128kbps');
+  const [tafseerModal, setTafseerModal] = useState<{ title: string, text: string } | null>(null);
   const [tafseerLoading, setTafseerLoading] = useState(false);
   const [selectedTafseer, setSelectedTafseer] = useState('ar.muyassar');
   const clickTimeoutRef = useRef<any>(null);
 
   const stopAutoScroll = () => {
     setIsAutoScrolling(false);
-    if (scrollRef.current) {
-        cancelAnimationFrame(scrollRef.current);
-        scrollRef.current = null;
-    }
+    if (scrollRef.current) { cancelAnimationFrame(scrollRef.current); scrollRef.current = null; }
   };
 
   const resetAudio = () => {
-    setIsPlaying(false);
-    setCurrentAudioIndex(-1);
-    setActiveAyahKey(null);
-    currentRepeatRef.current = 0;
-    if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-    }
+    setIsPlaying(false); setCurrentAudioIndex(-1); setActiveAyahKey(null); currentRepeatRef.current = 0;
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
   };
 
   useEffect(() => {
-    loadPage(currentPage);
-    getSurahForPage(currentPage).then(surah => {
-        setPrimarySurah(surah);
-        if (surah) progressService.getSurahStatus(session?.user?.id, surah.number).then(s => setStatus(s));
-    });
+    const loadInit = async () => {
+      setLoading(true);
+      const data = await fetchPageContent(currentPage);
+      setPageData(data);
+      const surah = await getSurahForPage(currentPage);
+      setPrimarySurah(surah);
+      if (surah && session?.user) {
+        const s = await progressService.getSurahStatus(session.user.id, surah.number);
+        setStatus(s);
+        const challenge = await challengeService.getActiveUserChallenge(session.user.id);
+        setActiveChallenge(challenge);
+      }
+      setLoading(false);
+    };
+
+    const handlePageFinish = async () => {
+      const duration = Math.floor((Date.now() - pageStartTimeRef.current) / 1000);
+      if (session?.user && pageData) {
+        const result = await challengeService.recordPageRead(session.user.id, currentPage, duration);
+        if (result.error) alert(result.error);
+      }
+      pageStartTimeRef.current = Date.now();
+    };
+
+    loadInit();
     stopAutoScroll();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     resetAudio();
+
+    return () => { handlePageFinish(); };
   }, [currentPage, session]);
 
   useEffect(() => {
@@ -220,107 +247,83 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
   }, [pageData]);
 
   useEffect(() => {
-      const audio = audioRef.current;
-      if (!audio) return;
-      const handleEnded = () => {
-          if (currentRepeatRef.current < repeatCount - 1) {
-              currentRepeatRef.current++;
-              audio.currentTime = 0;
-              audio.play();
-          } else {
-              currentRepeatRef.current = 0;
-              if (currentAudioIndex < pageAyahsList.length - 1) playAyahAtIndex(currentAudioIndex + 1);
-              else setIsPlaying(false);
-          }
-      };
-      audio.addEventListener('ended', handleEnded);
-      return () => audio.removeEventListener('ended', handleEnded);
+    const audio = audioRef.current;
+    if (!audio) return;
+    const handleEnded = () => {
+      if (currentRepeatRef.current < repeatCount - 1) {
+        currentRepeatRef.current++;
+        audio.currentTime = 0; audio.play();
+      } else {
+        currentRepeatRef.current = 0;
+        if (currentAudioIndex < pageAyahsList.length - 1) playAyahAtIndex(currentAudioIndex + 1);
+        else setIsPlaying(false);
+      }
+    };
+    audio.addEventListener('ended', handleEnded);
+    return () => audio.removeEventListener('ended', handleEnded);
   }, [currentAudioIndex, pageAyahsList, repeatCount]);
 
   const playAyahAtIndex = async (index: number) => {
-      if (index < 0 || index >= pageAyahsList.length) return;
-      const audio = audioRef.current;
-      if (!audio) return;
-      audio.pause();
-      currentRepeatRef.current = 0;
-      setCurrentAudioIndex(index);
-      const target = pageAyahsList[index];
-      setActiveAyahKey(target.key);
-      setIsPlaying(true);
-
-      const element = document.getElementById(`ayah-${target.key.replace(':', '-')}`);
-      if (element) element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-      const url = await getAyahAudioUrl(selectedReciter, target.key);
-      if (url) {
-        audio.src = url;
-        audio.play().catch(() => setIsPlaying(false));
-      }
+    if (index < 0 || index >= pageAyahsList.length) return;
+    const audio = audioRef.current; if (!audio) return;
+    audio.pause();
+    currentRepeatRef.current = 0; setCurrentAudioIndex(index);
+    const target = pageAyahsList[index];
+    setActiveAyahKey(target.key); setIsPlaying(true);
+    const element = document.getElementById(`ayah-${target.key.replace(':', '-')}`);
+    if (element) element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const url = await getAyahAudioUrl(selectedReciter, target.key);
+    if (url) { audio.src = url; audio.play().catch(() => setIsPlaying(false)); }
   };
 
   const togglePlay = () => {
-      const audio = audioRef.current;
-      if (!audio) return;
-      if (isPlaying) {
-          audio.pause();
-          setIsPlaying(false);
-      } else {
-          if (currentAudioIndex === -1) playAyahAtIndex(0);
-          else audio.play().then(() => setIsPlaying(true));
-      }
+    const audio = audioRef.current; if (!audio) return;
+    if (isPlaying) { audio.pause(); setIsPlaying(false); }
+    else { if (currentAudioIndex === -1) playAyahAtIndex(0); else audio.play().then(() => setIsPlaying(true)); }
   };
 
   const loadPage = async (pageNum: number) => {
-      setLoading(true);
-      const data = await fetchPageContent(pageNum);
-      setPageData(data);
-      setLoading(false);
+    setLoading(true);
+    const data = await fetchPageContent(pageNum);
+    setPageData(data);
+    setLoading(false);
   };
 
   const toggleAutoScroll = () => {
-      if (isAutoScrolling) {
-          stopAutoScroll();
-      } else {
-          setIsAutoScrolling(true);
-          const scrollStep = () => {
-              const pixelSpeeds = [0.4, 0.8, 1.5, 2.2, 3.5];
-              window.scrollBy(0, pixelSpeeds[scrollSpeed - 1] || 1);
-              scrollRef.current = requestAnimationFrame(scrollStep);
-          };
-          scrollRef.current = requestAnimationFrame(scrollStep);
-      }
+    if (isAutoScrolling) stopAutoScroll();
+    else {
+      setIsAutoScrolling(true);
+      const scrollStep = () => {
+        const pixelSpeeds = [0.4, 0.8, 1.5, 2.2, 3.5];
+        window.scrollBy(0, pixelSpeeds[scrollSpeed - 1] || 1);
+        scrollRef.current = requestAnimationFrame(scrollStep);
+      };
+      scrollRef.current = requestAnimationFrame(scrollStep);
+    }
   };
 
   const cleanAyahText = (text: string, surahNumber: number, ayahNumber: number) => {
-      if (ayahNumber === 1 && surahNumber !== 9) {
-          const words = text.split(' ');
-          if (words.length >= 4 && (words[0].includes('بِسْمِ') || words[0].includes('بسم'))) {
-              return words.slice(4).join(' ').trim();
-          }
-      }
-      return text;
+    if (ayahNumber === 1 && surahNumber !== 9) {
+      const words = text.split(' ');
+      if (words.length >= 4 && (words[0].includes('بِسْمِ') || words[0].includes('بسم'))) return words.slice(4).join(' ').trim();
+    }
+    return text;
   };
 
   const handleAyahClick = (ayahKey: string) => {
-      const idx = pageAyahsList.findIndex(a => a.key === ayahKey);
-      if (idx === -1) return;
-      if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
-      clickTimeoutRef.current = setTimeout(() => {
-          playAyahAtIndex(idx);
-          clickTimeoutRef.current = null;
-      }, 250);
+    const idx = pageAyahsList.findIndex(a => a.key === ayahKey);
+    if (idx === -1) return;
+    if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
+    clickTimeoutRef.current = setTimeout(() => { playAyahAtIndex(idx); clickTimeoutRef.current = null; }, 250);
   };
 
   const handleAyahDoubleClick = async (surahNum: number, ayahNum: number, surahName: string) => {
-      if (clickTimeoutRef.current) {
-          clearTimeout(clickTimeoutRef.current);
-          clickTimeoutRef.current = null;
-      }
-      setTafseerLoading(true);
-      setTafseerModal({ title: `الآية ${ayahNum} - سورة ${surahName}`, text: '' });
-      const tafseerText = await fetchTafseer(surahNum, ayahNum, selectedTafseer);
-      setTafseerModal({ title: `الآية ${ayahNum} - سورة ${surahName}`, text: tafseerText });
-      setTafseerLoading(false);
+    if (clickTimeoutRef.current) { clearTimeout(clickTimeoutRef.current); clickTimeoutRef.current = null; }
+    setTafseerLoading(true);
+    setTafseerModal({ title: `الآية ${ayahNum} - سورة ${surahName}`, text: '' });
+    const tafseerText = await fetchTafseer(surahNum, ayahNum, selectedTafseer);
+    setTafseerModal({ title: `الآية ${ayahNum} - سورة ${surahName}`, text: tafseerText });
+    setTafseerLoading(false);
   };
 
   const updateStatus = async (newStatus: any) => {
@@ -330,56 +333,34 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
 
   const renderPageContent = () => {
     if (!pageData || !pageData.ayahs) return null;
-    
     const elements: React.ReactNode[] = [];
-
     pageData.ayahs.forEach((ayah: any) => {
-        const ayahKey = `${ayah.surah.number}:${ayah.numberInSurah}`;
-        const isActive = activeAyahKey === ayahKey;
-        const cleanedText = cleanAyahText(ayah.text, ayah.surah.number, ayah.numberInSurah);
-
-        if (ayah.numberInSurah === 1) {
-               elements.push(
-                   <div key={`header-${ayah.surah.number}`} className="mt-8 mb-6 text-center select-none animate-in zoom-in w-full block clear-both">
-                       <div className="inline-flex items-center justify-center w-full max-w-xs mx-auto border-y-2 border-emerald-500/30 py-2 bg-emerald-500/5 mb-4 rounded-lg">
-                           <span className="font-quran text-2xl text-emerald-300 shadow-black drop-shadow-sm">
-                               سورة {ayah.surah.name.replace('سورة', '')}
-                           </span>
-                       </div>
-                       {ayah.surah.number !== 9 && (
-                           <div className="font-quran text-emerald-400 text-xl mb-6">
-                               بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ
-                           </div>
-                       )}
-                   </div>
-               );
-        }
-
-        if (cleanedText !== "" || ayah.numberInSurah !== 1) {
-            elements.push(
-                <span 
-                    key={ayahKey} 
-                    id={`ayah-${ayah.surah.number}-${ayah.numberInSurah}`}
-                    className={`inline group cursor-pointer transition-colors px-1 py-0.5 rounded-lg ${isActive ? 'text-emerald-300 bg-emerald-500/10' : 'hover:text-emerald-100'}`}
-                    onClick={() => handleAyahClick(ayahKey)}
-                    onDoubleClick={() => handleAyahDoubleClick(ayah.surah.number, ayah.numberInSurah, ayah.surah.name)}
-                >
-                    {cleanedText} 
-                    <span 
-                        className="inline-flex items-center justify-center mx-1 rounded-full border border-emerald-500/20 text-emerald-500 font-sans bg-emerald-500/5 select-none"
-                        style={{ 
-                            width: `${fontSize * 1.3}px`, 
-                            height: `${fontSize * 1.3}px`,
-                            fontSize: `${fontSize * 0.5}px` 
-                        }}
-                    >
-                        {ayah.numberInSurah}
-                    </span>
-                </span>
-            );
-        }
+      const ayahKey = `${ayah.surah.number}:${ayah.numberInSurah}`;
+      const isActive = activeAyahKey === ayahKey;
+      const cleanedText = cleanAyahText(ayah.text, ayah.surah.number, ayah.numberInSurah);
+      if (ayah.numberInSurah === 1) {
+        elements.push(
+          <div key={`header-${ayah.surah.number}`} className="mt-8 mb-6 text-center select-none animate-in zoom-in w-full block clear-both">
+            <div className="inline-flex items-center justify-center w-full max-w-xs mx-auto border-y-2 border-emerald-500/30 py-2 bg-emerald-500/5 mb-4 rounded-lg">
+              <span className="font-quran text-2xl text-emerald-300 shadow-black drop-shadow-sm">سورة {ayah.surah.name.replace('سورة', '')}</span>
+            </div>
+            {ayah.surah.number !== 9 && <div className="font-quran text-emerald-400 text-xl mb-6">بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ</div>}
+          </div>
+        );
+      }
+      if (cleanedText !== "" || ayah.numberInSurah !== 1) {
+        elements.push(
+          <span key={ayahKey} id={`ayah-${ayah.surah.number}-${ayah.numberInSurah}`}
+            className={`inline group cursor-pointer transition-colors px-1 py-0.5 rounded-lg ${isActive ? 'text-emerald-300 bg-emerald-500/10' : 'hover:text-emerald-100'}`}
+            onClick={() => handleAyahClick(ayahKey)} onDoubleClick={() => handleAyahDoubleClick(ayah.surah.number, ayah.numberInSurah, ayah.surah.name)}
+          >
+            {cleanedText}
+            <span className="inline-flex items-center justify-center mx-1 rounded-full border border-emerald-500/20 text-emerald-500 font-sans bg-emerald-500/5 select-none"
+              style={{ width: `${fontSize * 1.3}px`, height: `${fontSize * 1.3}px`, fontSize: `${fontSize * 0.5}px` }}>{ayah.numberInSurah}</span>
+          </span>
+        );
+      }
     });
-
     return elements;
   };
 
@@ -387,34 +368,35 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
     <div className="max-w-4xl mx-auto pb-40 px-2 md:px-4 animate-in fade-in duration-500 pt-6 md:pt-10">
       <audio ref={audioRef} className="hidden" />
 
-      {/* Tafseer Modal */}
-      {tafseerModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-              <div className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in" onClick={() => setTafseerModal(null)}></div>
-              <div className="relative w-full max-w-lg bg-[#1e293b]/95 backdrop-blur-xl border border-emerald-500/30 rounded-3xl p-6 shadow-2xl z-10">
-                  <div className="flex justify-between items-start mb-6">
-                      <div className="flex items-center gap-3 text-emerald-400">
-                          <BookOpenCheck size={24} />
-                          <h3 className="font-bold text-xl text-white">تفسير الآية</h3>
-                      </div>
-                      <button onClick={() => setTafseerModal(null)} className="p-2 bg-white/5 rounded-full text-gray-400"><X size={20} /></button>
-                  </div>
-                  <div className="bg-black/20 rounded-2xl p-5 max-h-[50vh] overflow-y-auto font-quran text-lg leading-relaxed text-white">
-                      {tafseerLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-emerald-500" /></div> : tafseerModal.text}
-                  </div>
-                  <p className="mt-4 text-center text-[10px] text-gray-500">المصدر: {TAFSEER_EDITIONS.find(t => t.id === selectedTafseer)?.name}</p>
-              </div>
+      {/* Challenge Progress Bar */}
+      {activeChallenge && (
+        <div className="fixed top-20 inset-x-0 z-[40] px-4 md:px-0 md:max-w-4xl md:mx-auto">
+          <div className="bg-emerald-600/90 backdrop-blur-md p-2 rounded-xl border border-emerald-400/30 flex items-center justify-between gap-4 shadow-xl">
+            <div className="flex items-center gap-2">
+              <Flag size={14} className="text-white" />
+              <span className="text-[10px] font-black text-white">إكمال التحدي: {activeChallenge.challenge_details.title}</span>
+            </div>
+            <div className="flex-1 h-1.5 bg-black/20 rounded-full overflow-hidden">
+              <div className="h-full bg-white transition-all duration-1000" style={{ width: `${(activeChallenge.pages_completed / activeChallenge.challenge_details.total_pages) * 100}%` }}></div>
+            </div>
+            <span className="text-[9px] font-bold text-white tabular-nums">{Math.round((activeChallenge.pages_completed / activeChallenge.challenge_details.total_pages) * 100)}%</span>
           </div>
+        </div>
       )}
 
-      {session && primarySurah && (
-        <div className="glass-panel p-3 rounded-xl mb-6 flex justify-around items-center mx-4">
-            {['not_started', 'in_progress', 'completed'].map((s: any) => (
-                <button key={s} onClick={() => updateStatus(s)} className={`flex flex-col items-center gap-1 text-[10px] ${status === s ? 'text-emerald-400 font-bold' : 'text-gray-600'}`}>
-                    {s === 'not_started' ? <Book size={18}/> : s === 'in_progress' ? <Play size={18}/> : <CheckCircle size={18}/>}
-                    <span>{s === 'not_started' ? 'جديدة' : s === 'in_progress' ? 'جاري' : 'تم'}</span>
-                </button>
-            ))}
+      {/* Tafseer Modal */}
+      {tafseerModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in" onClick={() => setTafseerModal(null)}></div>
+          <div className="relative w-full max-w-lg bg-[#1e293b]/95 backdrop-blur-xl border border-emerald-500/30 rounded-3xl p-6 shadow-2xl z-10">
+            <div className="flex justify-between items-start mb-6">
+              <div className="flex items-center gap-3 text-emerald-400"><BookOpenCheck size={24} /><h3 className="font-bold text-xl text-white">تفسير الآية</h3></div>
+              <button onClick={() => setTafseerModal(null)} className="p-2 bg-white/5 rounded-full text-gray-400"><X size={20} /></button>
+            </div>
+            <div className="bg-black/20 rounded-2xl p-5 max-h-[50vh] overflow-y-auto font-quran text-lg leading-relaxed text-white">
+              {tafseerLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-emerald-500" /></div> : tafseerModal.text}
+            </div>
+          </div>
         </div>
       )}
 
@@ -422,90 +404,49 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
         <div className="flex justify-center py-40"><Loader2 className="animate-spin text-emerald-500" size={48} /></div>
       ) : (
         <div className="bg-[#1e293b]/50 border border-white/5 rounded-[2.5rem] p-5 md:p-10 min-h-[80vh] shadow-2xl relative overflow-hidden mb-8">
-            {/* Inner Header - Back Button integrated into Square Header Box */}
-            <div className="flex items-center justify-between mb-8 pb-4 border-b border-white/5">
-                <div className="flex items-center gap-4">
-                   <button 
-                      onClick={onBack}
-                      className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/30 transition-all active:scale-90 group"
-                   >
-                      <ArrowRight size={24} className="group-hover:translate-x-1 transition-transform" />
-                   </button>
-                   <div className="flex flex-col">
-                       <span className="text-xs font-black text-emerald-400 uppercase tracking-widest">{primarySurah?.name}</span>
-                       <span className="text-[10px] text-gray-500 font-bold">تطبيق نور الإسلام</span>
-                   </div>
-                </div>
-                <div className="bg-white/5 border border-white/5 px-4 py-2 rounded-xl text-[10px] font-bold text-gray-400">
-                    صفحة <span className="text-emerald-400 font-black tabular-nums mx-1">{currentPage}</span>
-                </div>
+          <div className="flex items-center justify-between mb-8 pb-4 border-b border-white/5">
+            <div className="flex items-center gap-4">
+              <button onClick={onBack} className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all active:scale-90 group">
+                <ArrowRight size={24} className="group-hover:translate-x-1 transition-transform" />
+              </button>
+              <div className="flex flex-col"><span className="text-xs font-black text-emerald-400 uppercase tracking-widest">{primarySurah?.name}</span><span className="text-[10px] text-gray-500 font-bold">نور الإسلام</span></div>
             </div>
-
-            <div 
-                className="font-quran text-white text-justify" 
-                dir="rtl" 
-                style={{ 
-                    fontSize: `${fontSize}px`,
-                    lineHeight: fontSize < 20 ? '2.8' : '3.5'
-                }}
-            >
-                {renderPageContent()}
-            </div>
-            <div className="mt-12 text-center text-xs text-gray-600 border-t border-white/5 pt-4">نور الإسلام • صفحة {currentPage}</div>
+            <div className="bg-white/5 border border-white/5 px-4 py-2 rounded-xl text-[10px] font-bold text-gray-400">صفحة <span className="text-emerald-400 font-black tabular-nums mx-1">{currentPage}</span></div>
+          </div>
+          <div className="font-quran text-white text-justify" dir="rtl" style={{ fontSize: `${fontSize}px`, lineHeight: fontSize < 20 ? '2.8' : '3.5' }}>{renderPageContent()}</div>
         </div>
       )}
 
       {/* Floating Player */}
       <div ref={playerRef} className="fixed bottom-6 inset-x-4 md:inset-x-auto md:w-[600px] md:left-1/2 md:-translate-x-1/2 z-50">
         <div className={`bg-[#0f172a]/95 backdrop-blur-xl border border-white/10 shadow-2xl rounded-[2rem] overflow-hidden transition-all duration-300 ${isPanelExpanded ? 'max-h-[500px]' : 'max-h-[80px]'}`}>
-            <div className="h-[80px] flex items-center justify-between px-4">
-                <div className="flex items-center gap-1">
-                    <button onClick={() => setCurrentPage(p => Math.min(604, p+1))} className="p-2 text-gray-400"><ChevronLeft/></button>
-                    <span className="text-white font-bold px-2">{currentPage}</span>
-                    <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} className="p-2 text-gray-400"><ChevronRight/></button>
-                </div>
-                <button onClick={togglePlay} className="w-14 h-14 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-lg active:scale-95 transition-transform">
-                    {isPlaying ? <Pause fill="currentColor"/> : <Play fill="currentColor" className="ml-1"/>}
-                </button>
-                <button onClick={() => setIsPanelExpanded(!isPanelExpanded)} className={`p-3 rounded-xl transition-colors ${isPanelExpanded ? 'bg-emerald-500/10 text-emerald-400' : 'text-gray-400'}`}>
-                    <Settings2 size={24}/>
-                </button>
+          <div className="h-[80px] flex items-center justify-between px-4">
+            <div className="flex items-center gap-1">
+              <button onClick={() => setCurrentPage(p => Math.min(604, p + 1))} className="p-2 text-gray-400"><ChevronLeft /></button>
+              <span className="text-white font-bold px-2">{currentPage}</span>
+              <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} className="p-2 text-gray-400"><ChevronRight /></button>
             </div>
-
-            {isPanelExpanded && (
-                <div className="px-6 pb-6 pt-2 space-y-5 animate-in slide-in-from-bottom-4">
-                    <div className="border-t border-white/5 pt-4">
-                        <div className="flex items-center justify-between bg-white/5 p-4 rounded-2xl mb-4">
-                            <div className="flex items-center gap-3">
-                                <MoveDown size={20} className={isAutoScrolling ? 'text-emerald-400' : 'text-gray-500'}/>
-                                <span className="text-sm font-bold text-white">التمرير التلقائي</span>
-                            </div>
-                            <button onClick={toggleAutoScroll} className={`w-12 h-6 rounded-full transition-all relative ${isAutoScrolling ? 'bg-emerald-500' : 'bg-gray-700'}`}>
-                                <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${isAutoScrolling ? 'left-7' : 'left-1'}`}></div>
-                            </button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-2"><label className="text-[10px] text-gray-500 block">حجم الخط</label>
-                                <div className="flex items-center justify-between bg-black/20 p-2 rounded-xl">
-                                    <button onClick={() => setFontSize(s => Math.max(12, s-2))} className="p-1"><Minus size={14}/></button>
-                                    <span className="font-bold text-emerald-400">{fontSize}</span>
-                                    <button onClick={() => setFontSize(s => Math.min(60, s+2))} className="p-1"><Plus size={14}/></button>
-                                </div>
-                            </div>
-                            <div className="space-y-2"><label className="text-[10px] text-gray-500 block">تكرار الآية</label>
-                                <select value={repeatCount} onChange={e => setRepeatCount(parseInt(e.target.value))} className="w-full bg-black/20 border border-white/5 p-2 rounded-xl text-xs outline-none">
-                                    {[1, 2, 3, 5, 10].map(n => <option key={n} value={n}>{n === 1 ? 'مرة واحدة' : `${n} مرات`}</option>)}
-                                </select>
-                            </div>
-                        </div>
-                        <div className="mt-4 space-y-2"><label className="text-[10px] text-gray-500 block">القارئ المفضل</label>
-                            <select value={selectedReciter} onChange={e => setSelectedReciter(e.target.value)} className="w-full bg-black/20 border border-white/5 p-3 rounded-xl text-xs text-white outline-none">
-                                {RECITERS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                            </select>
-                        </div>
-                    </div>
+            <button onClick={togglePlay} className="w-14 h-14 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-lg active:scale-95 transition-transform">
+              {isPlaying ? <Pause fill="currentColor" /> : <Play fill="currentColor" className="ml-1" />}
+            </button>
+            <button onClick={() => setIsPanelExpanded(!isPanelExpanded)} className={`p-3 rounded-xl transition-colors ${isPanelExpanded ? 'bg-emerald-500/10 text-emerald-400' : 'text-gray-400'}`}>
+              <Settings2 size={24} />
+            </button>
+          </div>
+          {isPanelExpanded && (
+            <div className="px-6 pb-6 pt-2 space-y-5 animate-in slide-in-from-bottom-4">
+              <div className="border-t border-white/5 pt-4">
+                <div className="flex items-center justify-between bg-white/5 p-4 rounded-2xl mb-4">
+                  <span className="text-sm font-bold text-white">التمرير التلقائي</span>
+                  <button onClick={toggleAutoScroll} className={`w-12 h-6 rounded-full transition-all relative ${isAutoScrolling ? 'bg-emerald-500' : 'bg-gray-700'}`}><div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${isAutoScrolling ? 'left-7' : 'left-1'}`}></div></button>
                 </div>
-            )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2"><label className="text-[10px] text-gray-500 block">حجم الخط</label><div className="flex items-center justify-between bg-black/20 p-2 rounded-xl"><button onClick={() => setFontSize(s => Math.max(12, s - 2))} className="p-1"><Minus size={14} /></button><span className="font-bold text-emerald-400">{fontSize}</span><button onClick={() => setFontSize(s => Math.min(60, s + 2))} className="p-1"><Plus size={14} /></button></div></div>
+                  <div className="space-y-2"><label className="text-[10px] text-gray-500 block">تكرار الآية</label><select value={repeatCount} onChange={e => setRepeatCount(parseInt(e.target.value))} className="w-full bg-black/20 border border-white/5 p-2 rounded-xl text-xs outline-none">{[1, 2, 3, 5, 10].map(n => <option key={n} value={n}>{n === 1 ? 'مرة واحدة' : `${n} مرات`}</option>)}</select></div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

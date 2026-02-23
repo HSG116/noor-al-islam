@@ -48,6 +48,7 @@ const LOGO_URL = "https://iili.io/fkA4vvj.png";
 const App = () => {
   const [view, setView] = useState<ViewState>(ViewState.HOME);
   const [selectedSurah, setSelectedSurah] = useState<Surah | null>(null);
+  const [currentReaderPage, setCurrentReaderPage] = useState<number>(1);
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<CompetitionUser | null>(null);
@@ -96,28 +97,29 @@ const App = () => {
 
   const renderContent = () => {
     switch (view) {
-      case ViewState.DASHBOARD: return <Dashboard session={null} onNavigate={openTaskRange} />;
+      case ViewState.DASHBOARD: return <Dashboard session={session} onNavigate={openTaskRange} />;
       case ViewState.QURAN_LIST:
         return (
           <QuranList
-            onSelectSurah={(surah) => {
+            onSelectSurah={(surah, pageNum) => {
               setSelectedSurah(surah);
+              setCurrentReaderPage(pageNum || SURAH_START_PAGES[surah.number - 1]);
               setView(ViewState.QURAN_READ);
             }}
-            session={null}
+            session={session}
             onBack={() => setView(ViewState.HOME)}
           />
         );
       case ViewState.QURAN_READ:
-        return selectedSurah ? (
+        return (
           <QuranReader
-            initialPage={SURAH_START_PAGES[selectedSurah.number - 1]}
+            initialPage={currentReaderPage}
             onBack={() => setView(ViewState.QURAN_LIST)}
             onFinishTask={() => setView(ViewState.PLANNER)}
-            session={null}
+            session={session}
           />
-        ) : null;
-      case ViewState.PLANNER: return <Planner session={null} onNavigate={openTaskRange} />;
+        );
+      case ViewState.PLANNER: return <Planner session={session} onNavigate={openTaskRange} />;
       case ViewState.AZKAR: return <Azkar />;
       case ViewState.PRAYER_TIMES: return <PrayerTimes />;
       case ViewState.MOSQUES: return <MosqueFinder />;
@@ -131,12 +133,7 @@ const App = () => {
         return (
           <Competitions
             onBack={() => setView(ViewState.HOME)}
-            user={session?.user || null}
-            profile={profile}
-            onProfileUpdate={(p) => {
-              setProfile(p);
-              if (session?.user) localStorage.setItem(`profile_${session.user.id}`, JSON.stringify(p));
-            }}
+            session={session}
           />
         );
       case ViewState.HOME:

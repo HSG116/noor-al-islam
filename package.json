@@ -1,13 +1,14 @@
 {
-  "name": "noor-al-hafiz",
+  "name": "noor-al-islam",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy": "git add . && git commit -m \"Quick deploy\" && git push origin main"
   },
   "dependencies": {
     "@emailjs/browser": "4.3.0",
