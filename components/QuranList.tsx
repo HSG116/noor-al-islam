@@ -414,8 +414,8 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
       {loading ? (
         <div className="flex justify-center py-40"><Loader2 className="animate-spin text-emerald-500" size={48} /></div>
       ) : (
-        <div className="bg-[#1e293b]/50 border border-white/5 rounded-[2.5rem] p-5 md:p-10 min-h-[80vh] shadow-2xl relative overflow-hidden mb-8">
-          <div className="flex items-center justify-between mb-8 pb-4 border-b border-white/5">
+        <div className="bg-[#1e293b]/50 border border-emerald-500/10 rounded-[2.5rem] p-5 md:p-10 min-h-[80vh] shadow-2xl relative overflow-hidden mb-8">
+          <div className="flex items-center justify-between mb-8 pb-4 border-b border-emerald-500/10">
             <div className="flex items-center gap-4">
               <button onClick={onBack} className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all active:scale-90 group">
                 <ArrowRight size={24} className="group-hover:translate-x-1 transition-transform" />
@@ -506,7 +506,7 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
                         <button
                           key={t.id}
                           onClick={() => setSelectedTafseer(t.id)}
-                          className={`px-4 py-2.5 rounded-xl border text-[10px] font-black transition-all ${selectedTafseer === t.id ? 'bg-white text-black border-white shadow-lg scale-105' : 'bg-white/5 text-gray-400 border-white/5 hover:bg-white/10'}`}
+                          className={`px-4 py-2.5 rounded-xl border text-[10px] font-black transition-all ${selectedTafseer === t.id ? 'bg-emerald-500 text-white border-emerald-400 shadow-lg scale-105' : 'bg-white/5 text-gray-400 border-white/5 hover:bg-white/10'}`}
                         >
                           {t.name}
                         </button>
@@ -516,8 +516,8 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
                 </div>
 
                 {/* Toggles & Numbers Control */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-white/5 pt-6">
-                  <div className="flex items-center justify-between bg-white/5 p-4 rounded-2xl border border-white/5 group hover:bg-white/[0.07] transition-all">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-emerald-500/10 pt-6">
+                  <div className="flex items-center justify-between bg-white/5 p-4 rounded-2xl border border-emerald-500/10 group hover:bg-white/[0.07] transition-all">
                     <div className="flex flex-col gap-1">
                       <span className="text-xs font-bold text-white leading-none">التمرير التلقائي</span>
                       <span className="text-[8px] text-gray-500 font-bold">تحريك الصفحة لأسفل</span>
