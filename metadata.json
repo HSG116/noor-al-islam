@@ -1,0 +1,7 @@
+{
+  "name": "Remix: Remix: Noor Al-Islam",
+  "description": "تطبيق نور الإسلام - منصتك المتكاملة لحفظ القرآن الكريم، معرفة مواقيت الصلاة، والأذكار اليومية بتصميم عصري.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
