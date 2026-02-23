@@ -429,45 +429,49 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
       )}
 
       {/* Floating Control Center */}
-      <div ref={playerRef} className="fixed bottom-6 inset-x-4 md:inset-x-auto md:w-[680px] md:left-1/2 md:-translate-x-1/2 z-50 animate-in slide-in-from-bottom-10 duration-700">
-        <div className={`bg-[#0f172a]/95 backdrop-blur-2xl border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-[2.5rem] overflow-hidden transition-all duration-500 ${isPanelExpanded ? 'max-h-[500px]' : 'max-h-[90px]'}`}>
-          <div className="h-[90px] flex items-center justify-between px-6">
+      <div ref={playerRef} className="fixed bottom-6 inset-x-4 md:inset-x-auto md:w-[720px] md:left-1/2 md:-translate-x-1/2 z-50 animate-in slide-in-from-bottom-10 duration-700">
+        <div className={`bg-[#0f172a]/95 backdrop-blur-2xl border border-white/10 shadow-[0_25px_60px_rgba(0,0,0,0.6)] rounded-[2.5rem] transition-all duration-500 ${isPanelExpanded ? 'max-h-[80vh] overflow-y-auto custom-scrollbar' : 'max-h-[100px] overflow-hidden'}`}>
+          <div className="h-[100px] grid grid-cols-3 items-center px-4 md:px-8 relative">
 
             {/* Page Navigation Area */}
-            <div className="flex items-center gap-3 bg-white/5 p-1.5 rounded-2xl border border-white/5">
-              <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-gray-400 hover:bg-emerald-500 hover:text-white transition-all active:scale-90"
-                title="الصفحة السابقة"
-              >
-                <ChevronRight size={20} />
-              </button>
+            <div className="flex justify-start">
+              <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-emerald-500/10">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center text-gray-400 hover:bg-emerald-500 hover:text-white transition-all active:scale-90"
+                  title="الصفحة السابقة"
+                >
+                  <ChevronRight size={18} />
+                </button>
 
-              <div className="flex flex-col items-center px-4 min-w-[70px]">
-                <span className="text-[10px] font-black text-emerald-500/50 uppercase tracking-widest leading-none mb-1">PAGE</span>
-                <span className="text-lg font-black text-white tabular-nums leading-none">{currentPage}</span>
+                <div className="flex flex-col items-center px-2 min-w-[55px]">
+                  <span className="text-[8px] font-black text-emerald-500/50 uppercase tracking-widest leading-none mb-1">PAGE</span>
+                  <span className="text-base font-black text-white tabular-nums leading-none">{currentPage}</span>
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(604, p + 1))}
+                  className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center text-gray-400 hover:bg-emerald-500 hover:text-white transition-all active:scale-90"
+                  title="الصفحة التالية"
+                >
+                  <ChevronLeft size={18} />
+                </button>
               </div>
-
-              <button
-                onClick={() => setCurrentPage(p => Math.min(604, p + 1))}
-                className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-gray-400 hover:bg-emerald-500 hover:text-white transition-all active:scale-90"
-                title="الصفحة التالية"
-              >
-                <ChevronLeft size={20} />
-              </button>
             </div>
 
-            {/* Play Button */}
-            <div className="absolute left-1/2 -translate-x-1/2">
+            {/* Play Button - Center Column */}
+            <div className="flex justify-center">
               <button onClick={togglePlay} className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)] active:scale-90 transition-all hover:scale-105 border-4 border-[#0f172a]">
                 {isPlaying ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" className="ml-1" />}
               </button>
             </div>
 
-            {/* Settings Toggle */}
-            <button onClick={() => setIsPanelExpanded(!isPanelExpanded)} className={`p-4 rounded-2xl transition-all duration-300 ${isPanelExpanded ? 'bg-emerald-500 text-white shadow-lg rotate-90' : 'bg-white/5 text-gray-400 hover:text-emerald-400'}`}>
-              <Settings2 size={24} />
-            </button>
+            {/* Settings Toggle - Left Column */}
+            <div className="flex justify-end">
+              <button onClick={() => setIsPanelExpanded(!isPanelExpanded)} className={`p-4 rounded-2xl transition-all duration-300 ${isPanelExpanded ? 'bg-emerald-500 text-white shadow-lg rotate-90' : 'bg-white/5 text-gray-400 hover:text-emerald-400'}`}>
+                <Settings2 size={24} />
+              </button>
+            </div>
           </div>
           {isPanelExpanded && (
             <div className="px-6 pb-8 pt-2 space-y-6 animate-in slide-in-from-bottom-4 duration-500">
