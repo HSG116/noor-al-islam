@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Navbar } from './components/Navbar';
-import { QuranList, QuranReader } from './QuranList';
+import { QuranList, QuranReader } from './components/QuranList';
 import { Dashboard } from './components/Dashboard';
 import { Planner } from './components/Planner';
 import { DailyVerse } from './components/DailyVerse';
