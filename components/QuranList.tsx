@@ -393,22 +393,7 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
         </div>
       )}
 
-      {/* Side Navigation Buttons */}
-      <div className="fixed inset-y-0 left-2 right-2 md:left-6 md:right-6 pointer-events-none z-40 flex items-center justify-between">
-        <button
-          onClick={() => setCurrentPage(p => Math.min(604, p + 1))}
-          className="w-10 h-10 md:w-14 md:h-14 rounded-full bg-black/40 hover:bg-emerald-500/40 border border-white/10 backdrop-blur-md flex items-center justify-center text-white transition-all pointer-events-auto active:scale-95 group shadow-2xl"
-        >
-          <ChevronLeft size={24} className="group-hover:-translate-x-1 transition-transform" />
-        </button>
 
-        <button
-          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-          className="w-10 h-10 md:w-14 md:h-14 rounded-full bg-black/40 hover:bg-emerald-500/40 border border-white/10 backdrop-blur-md flex items-center justify-center text-white transition-all pointer-events-auto active:scale-95 group shadow-2xl"
-        >
-          <ChevronRight size={24} className="group-hover:translate-x-1 transition-transform" />
-        </button>
-      </div>
 
       {/* Tafseer Modal */}
       {tafseerModal && (
@@ -443,19 +428,44 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
         </div>
       )}
 
-      {/* Floating Player */}
-      <div ref={playerRef} className="fixed bottom-6 inset-x-4 md:inset-x-auto md:w-[600px] md:left-1/2 md:-translate-x-1/2 z-50">
-        <div className={`bg-[#0f172a]/95 backdrop-blur-xl border border-white/10 shadow-2xl rounded-[2rem] overflow-hidden transition-all duration-300 ${isPanelExpanded ? 'max-h-[500px]' : 'max-h-[80px]'}`}>
-          <div className="h-[80px] flex items-center justify-between px-4">
-            <div className="flex items-center gap-1">
-              <button onClick={() => setCurrentPage(p => Math.min(604, p + 1))} className="p-2 text-gray-400"><ChevronLeft /></button>
-              <span className="text-white font-bold px-2">{currentPage}</span>
-              <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} className="p-2 text-gray-400"><ChevronRight /></button>
+      {/* Floating Control Center */}
+      <div ref={playerRef} className="fixed bottom-6 inset-x-4 md:inset-x-auto md:w-[680px] md:left-1/2 md:-translate-x-1/2 z-50 animate-in slide-in-from-bottom-10 duration-700">
+        <div className={`bg-[#0f172a]/95 backdrop-blur-2xl border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-[2.5rem] overflow-hidden transition-all duration-500 ${isPanelExpanded ? 'max-h-[500px]' : 'max-h-[90px]'}`}>
+          <div className="h-[90px] flex items-center justify-between px-6">
+
+            {/* Page Navigation Area */}
+            <div className="flex items-center gap-3 bg-white/5 p-1.5 rounded-2xl border border-white/5">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-gray-400 hover:bg-emerald-500 hover:text-white transition-all active:scale-90"
+                title="الصفحة السابقة"
+              >
+                <ChevronRight size={20} />
+              </button>
+
+              <div className="flex flex-col items-center px-4 min-w-[70px]">
+                <span className="text-[10px] font-black text-emerald-500/50 uppercase tracking-widest leading-none mb-1">PAGE</span>
+                <span className="text-lg font-black text-white tabular-nums leading-none">{currentPage}</span>
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(p => Math.min(604, p + 1))}
+                className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-gray-400 hover:bg-emerald-500 hover:text-white transition-all active:scale-90"
+                title="الصفحة التالية"
+              >
+                <ChevronLeft size={20} />
+              </button>
             </div>
-            <button onClick={togglePlay} className="w-14 h-14 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-lg active:scale-95 transition-transform">
-              {isPlaying ? <Pause fill="currentColor" /> : <Play fill="currentColor" className="ml-1" />}
-            </button>
-            <button onClick={() => setIsPanelExpanded(!isPanelExpanded)} className={`p-3 rounded-xl transition-colors ${isPanelExpanded ? 'bg-emerald-500/10 text-emerald-400' : 'text-gray-400'}`}>
+
+            {/* Play Button */}
+            <div className="absolute left-1/2 -translate-x-1/2">
+              <button onClick={togglePlay} className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)] active:scale-90 transition-all hover:scale-105 border-4 border-[#0f172a]">
+                {isPlaying ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" className="ml-1" />}
+              </button>
+            </div>
+
+            {/* Settings Toggle */}
+            <button onClick={() => setIsPanelExpanded(!isPanelExpanded)} className={`p-4 rounded-2xl transition-all duration-300 ${isPanelExpanded ? 'bg-emerald-500 text-white shadow-lg rotate-90' : 'bg-white/5 text-gray-400 hover:text-emerald-400'}`}>
               <Settings2 size={24} />
             </button>
           </div>
