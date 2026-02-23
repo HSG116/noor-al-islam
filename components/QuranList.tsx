@@ -368,21 +368,47 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
     <div className="max-w-4xl mx-auto pb-40 px-2 md:px-4 animate-in fade-in duration-500 pt-6 md:pt-10">
       <audio ref={audioRef} className="hidden" />
 
-      {/* Challenge Progress Bar */}
+      {/* Challenge Progress Bar - Fixed at top of viewport */}
       {activeChallenge && (
-        <div className="fixed top-20 inset-x-0 z-[40] px-4 md:px-0 md:max-w-4xl md:mx-auto">
-          <div className="bg-emerald-600/90 backdrop-blur-md p-2 rounded-xl border border-emerald-400/30 flex items-center justify-between gap-4 shadow-xl">
-            <div className="flex items-center gap-2">
-              <Flag size={14} className="text-white" />
-              <span className="text-[10px] font-black text-white">إكمال التحدي: {activeChallenge.challenge_details.title}</span>
+        <div className="fixed top-0 left-0 right-0 z-[100] px-2 py-3 bg-[#0f172a]/90 backdrop-blur-lg border-b border-emerald-500/30 shadow-2xl">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center text-white shadow-lg">
+                <Flag size={14} />
+              </div>
+              <div className="hidden sm:block">
+                <span className="text-[10px] font-black text-white block leading-none">تحدي الختمة</span>
+                <span className="text-[9px] text-emerald-400 font-bold">{activeChallenge.challenge_details?.title}</span>
+              </div>
             </div>
-            <div className="flex-1 h-1.5 bg-black/20 rounded-full overflow-hidden">
-              <div className="h-full bg-white transition-all duration-1000" style={{ width: `${(activeChallenge.pages_completed / activeChallenge.challenge_details.total_pages) * 100}%` }}></div>
+            <div className="flex-1 h-2 bg-black/40 rounded-full overflow-hidden border border-white/5">
+              <div className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-1000 shadow-[0_0_10px_rgba(16,185,129,0.5)]"
+                style={{ width: `${(activeChallenge.pages_completed / (activeChallenge.challenge_details?.total_pages || 604)) * 100}%` }}></div>
             </div>
-            <span className="text-[9px] font-bold text-white tabular-nums">{Math.round((activeChallenge.pages_completed / activeChallenge.challenge_details.total_pages) * 100)}%</span>
+            <div className="text-right shrink-0">
+              <span className="text-[11px] font-black text-white tabular-nums">{Math.round((activeChallenge.pages_completed / (activeChallenge.challenge_details?.total_pages || 604)) * 100)}%</span>
+              <span className="text-[8px] text-gray-400 block font-bold">إنجاز</span>
+            </div>
           </div>
         </div>
       )}
+
+      {/* Side Navigation Buttons */}
+      <div className="fixed inset-y-0 left-2 right-2 md:left-6 md:right-6 pointer-events-none z-40 flex items-center justify-between">
+        <button
+          onClick={() => setCurrentPage(p => Math.min(604, p + 1))}
+          className="w-10 h-10 md:w-14 md:h-14 rounded-full bg-black/40 hover:bg-emerald-500/40 border border-white/10 backdrop-blur-md flex items-center justify-center text-white transition-all pointer-events-auto active:scale-95 group shadow-2xl"
+        >
+          <ChevronLeft size={24} className="group-hover:-translate-x-1 transition-transform" />
+        </button>
+
+        <button
+          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+          className="w-10 h-10 md:w-14 md:h-14 rounded-full bg-black/40 hover:bg-emerald-500/40 border border-white/10 backdrop-blur-md flex items-center justify-center text-white transition-all pointer-events-auto active:scale-95 group shadow-2xl"
+        >
+          <ChevronRight size={24} className="group-hover:translate-x-1 transition-transform" />
+        </button>
+      </div>
 
       {/* Tafseer Modal */}
       {tafseerModal && (
