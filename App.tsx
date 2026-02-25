@@ -1,6 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Navbar } from './components/Navbar';
+import Footer from './components/Footer';
 import { QuranList, QuranReader } from './components/QuranList';
 import { Dashboard } from './components/Dashboard';
 import { Planner } from './components/Planner';
@@ -350,7 +351,7 @@ const App = () => {
       <Stars />
       <div className="relative z-10 flex flex-col flex-1">
         {view !== ViewState.QURAN_READ && <Navbar currentView={view} setView={setView} />}
-        <main className={`flex-1 container mx-auto px-0 md:px-4 ${view === ViewState.HOME ? 'pb-24' : 'pb-32 pt-6 md:pt-28'}`}>
+        <main className={`flex-1 container mx-auto px-0 md:px-4 ${view === ViewState.HOME ? 'pb-0' : 'pb-10 pt-6 md:pt-28'}`}>
           <AnimatePresence mode="wait">
             <motion.div
               key={view}
@@ -364,6 +365,7 @@ const App = () => {
             </motion.div>
           </AnimatePresence>
         </main>
+        {view !== ViewState.QURAN_READ && <Footer />}
       </div>
     </div>
   );
