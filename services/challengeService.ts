@@ -101,8 +101,8 @@ export const challengeService = {
 
     // تسجيل قراءة صفحة مع نظام حماية
     async recordPageRead(userId: string, pageNumber: number, durationSeconds: number) {
-        // 1. نظام الحماية (تخطي الصفحة في أقل من 9 ثواني يعتبر غش)
-        if (durationSeconds < 9) {
+        // 1. نظام الحماية (تخطي الصفحة في أقل من 2 ثانية يعتبر غش)
+        if (durationSeconds < 2) {
             const { data: profile } = await supabase.from('profiles').select('cheat_warnings').eq('id', userId).single();
             const newWarnings = (profile?.cheat_warnings || 0) + 1;
 

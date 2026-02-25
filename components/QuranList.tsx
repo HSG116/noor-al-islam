@@ -199,6 +199,7 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
   const [tafseerLoading, setTafseerLoading] = useState(false);
   const [selectedTafseer, setSelectedTafseer] = useState('ar.muyassar');
   const clickTimeoutRef = useRef<any>(null);
+  const pageTimestampsRef = useRef<number[]>([]);
 
   const stopAutoScroll = () => {
     setIsAutoScrolling(false);
@@ -226,8 +227,24 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
         if (challenge) {
           const expPage = challenge.last_page_read || 1;
           setExpectedPage(expPage);
-          // If the user tries to read a page that is > expectedPage + 1
-          if (currentPage > expPage + 1 || currentPage < expPage - 5) {
+
+          // Update page turn timestamps for speed check
+          const now = Date.now();
+          const timestamps = [...pageTimestampsRef.current, now];
+          if (timestamps.length > 3) timestamps.shift();
+          pageTimestampsRef.current = timestamps;
+
+          // Check for 3 pages in 7 seconds
+          let isTooFast = false;
+          if (timestamps.length === 3) {
+            const duration = (timestamps[2] - timestamps[0]) / 1000;
+            if (duration < 7) {
+              isTooFast = true;
+            }
+          }
+
+          // Show warning if user is too far ahead (> 3 pages) OR too fast (3 pages in 7s)
+          if (currentPage > expPage + 3 || currentPage < expPage - 10 || isTooFast) {
             setShowSequenceWarning(true);
           }
         }
@@ -242,7 +259,7 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
       if (session?.user && pageData && activeChallenge) {
         const expPage = activeChallenge.last_page_read || 1;
 
-        if (currentPage <= expPage + 1) {
+        if (currentPage <= expPage + 3) {
           const result = await challengeService.recordPageRead(session.user.id, currentPage, duration);
           if (result.error) {
             alert(result.error);
@@ -429,10 +446,10 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
             <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6 text-red-500">
               <span className="text-4xl">⚠️</span>
             </div>
-            <h3 className="font-black text-2xl text-white mb-4">خارج مسار التحدي!</h3>
+            <h3 className="font-black text-2xl text-white mb-4">تنبيه نظام الحماية!</h3>
             <p className="text-gray-300 mb-8 leading-relaxed">
-              أنت الآن تقرأ في صفحة مختلفة عن مسار تحديك الحالي. صفحتك المستحقة هي <strong className="text-emerald-400 text-xl mx-1">{expectedPage}</strong>.<br /><br />
-              القراءة العشوائية <strong>غير مسموحة</strong> في مسابقات التحدي. سيتم إيقاف احتساب تقدّمك حتى تعود للمسار الصحيح.
+              لقد اكتشف النظام حركة غير طبيعية في تقليب الصفحات. يرجى القراءة بتأنٍ.<br /><br />
+              يجب ألا تتجاوز <strong>3 صفحات في 7 ثوانٍ</strong>، كما يجب الالتزام بمسار التحدي. صفحتك المستحقة حالياً هي <strong className="text-emerald-400 text-xl mx-1">{expectedPage}</strong>.
             </p>
             <div className="flex flex-col gap-3">
               <button
