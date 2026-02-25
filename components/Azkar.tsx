@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, ChevronLeft, Sun, Moon, Coffee, RotateCcw, CheckCircle2, Copy, Share2, Heart, BookOpen, Star, Sparkles, Filter, Info, ArrowRight, Check, ArrowLeft, Loader2 } from 'lucide-react';
-import { challengeService } from '../services/challengeService';
+import { Search, ChevronLeft, Sun, Moon, Coffee, RotateCcw, CheckCircle2, Copy, Share2, Heart, BookOpen, Star, Sparkles, Filter, Info, ArrowRight, Check, ArrowLeft, Loader2, Target, Award, Quote } from 'lucide-react';
+import { challengeService, UserChallenge } from '../services/challengeService';
 import { Session } from '@supabase/supabase-js';
 
 interface AzkarCategory {
@@ -34,10 +34,28 @@ export const Azkar: React.FC<AzkarProps> = ({ session }) => {
     const [counts, setCounts] = useState<Record<number, number>>({});
     const [copiedId, setCopiedId] = useState<number | null>(null);
     const [hasRecordedCompletion, setHasRecordedCompletion] = useState(false);
+    const [activeChallenge, setActiveChallenge] = useState<UserChallenge | null>(null);
 
     useEffect(() => {
         fetchCategories();
-    }, []);
+        if (session?.user) {
+            loadActiveChallenge();
+        }
+    }, [session]);
+
+    const loadActiveChallenge = async () => {
+        const challenges = await challengeService.getActiveChallengesByCategory(session!.user.id, 'azkar');
+        if (challenges.length > 0) {
+            setActiveChallenge(challenges[0]);
+        }
+    };
+
+    const getTimePeriod = () => {
+        const hour = new Date().getHours();
+        if (hour >= 4 && hour < 12) return 'morning';
+        if (hour >= 16 || hour < 3) return 'evening';
+        return 'other';
+    };
 
     // Smooth scroll to top when category changes
     useEffect(() => {
@@ -68,11 +86,15 @@ export const Azkar: React.FC<AzkarProps> = ({ session }) => {
             setHasRecordedCompletion(true);
             const result = await challengeService.recordAzkarCompletion(session.user.id, type);
             if (result.success) {
-                // You could show a toast or a special animation here
                 console.log(`Successfully recorded ${type} azkar completion`);
+                loadActiveChallenge(); // Refresh progress
             }
         }
     };
+
+    const period = getTimePeriod();
+    const recommendedTitle = period === 'morning' ? 'أذكار الصباح' : period === 'evening' ? 'أذكار المساء' : '';
+    const recommendedCategory = categories.find(c => c.TITLE === recommendedTitle);
 
     const fetchCategories = async () => {
         try {
@@ -289,6 +311,80 @@ export const Azkar: React.FC<AzkarProps> = ({ session }) => {
                 transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
                 className="text-center relative"
             >
+                {/* --- SMART RECOMMENDATION & CHALLENGE HEADER --- */}
+                <div className="max-w-3xl mx-auto space-y-4 mb-12">
+                    {/* 1. If Category selected and finished, show Dua */}
+                    {hasRecordedCompletion && selectedCategory && (
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            className="glass-panel p-6 rounded-[2.5rem] border border-emerald-500/30 bg-emerald-500/5 shadow-2xl relative overflow-hidden text-right group"
+                        >
+                            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <Quote size={64} className="text-emerald-500" />
+                            </div>
+                            <div className="relative z-10">
+                                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-widest mb-3">
+                                    <Sparkles size={12} /> تقبل الله طاعتك
+                                </span>
+                                <p className="font-quran text-lg md:text-2xl text-emerald-100 leading-relaxed">
+                                    "اللَّهُمَّ أَعِنِّي عَلَى ذِكْرِكَ، وَشُكْرِكَ، وَحُسْنِ عِبَادَتِكَ"
+                                </p>
+                            </div>
+                        </motion.div>
+                    )}
+
+                    {/* 2. Active Challenge Progress (Visible if not in selected finished state) */}
+                    {activeChallenge && !hasRecordedCompletion && (
+                        <motion.div
+                            initial={{ x: -20, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            className="glass-panel p-4 md:p-6 rounded-[2.5rem] border border-amber-500/20 bg-amber-500/5 flex items-center justify-between gap-4 shadow-xl"
+                        >
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-500">
+                                    <Target size={24} />
+                                </div>
+                                <div className="text-right">
+                                    <h4 className="text-xs md:text-sm font-black text-white">{activeChallenge.challenge_details?.title}</h4>
+                                    <p className="text-[10px] text-gray-500 font-bold">تم إنجاز {activeChallenge.pages_completed} من {activeChallenge.challenge_details?.total_pages ? activeChallenge.challenge_details.total_pages * 2 : 0} ورد</p>
+                                </div>
+                            </div>
+                            <div className="flex-1 max-w-[100px] md:max-w-[150px] space-y-1.5">
+                                <div className="h-2 bg-black/40 rounded-full overflow-hidden border border-white/5">
+                                    <motion.div
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${Math.min(100, (activeChallenge.pages_completed / ((activeChallenge.challenge_details?.total_pages || 1) * 2)) * 100)}%` }}
+                                        className="h-full bg-gradient-to-r from-amber-600 to-yellow-400"
+                                    />
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
+
+                    {/* 3. Time-based Recommendation */}
+                    {recommendedCategory && !selectedCategory && (
+                        <motion.div
+                            whileHover={{ scale: 1.02 }}
+                            onClick={() => fetchAzkarContent(recommendedCategory)}
+                            className="cursor-pointer glass-panel p-4 md:p-6 rounded-[2.5rem] border border-emerald-500/20 bg-emerald-500/10 flex items-center justify-between gap-4 shadow-xl group"
+                        >
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-all">
+                                    {period === 'morning' ? <Sun size={24} /> : <Moon size={24} />}
+                                </div>
+                                <div className="text-right">
+                                    <span className="text-[9px] font-black text-emerald-500/60 uppercase tracking-widest">مستحب الآن</span>
+                                    <h4 className="text-sm md:text-lg font-black text-white">{recommendedTitle}</h4>
+                                </div>
+                            </div>
+                            <button className="px-6 py-2 bg-emerald-500 text-white rounded-xl text-[10px] font-black group-hover:bg-emerald-400 transition-colors flex items-center gap-2">
+                                اقرأ الآن <ArrowLeft size={14} />
+                            </button>
+                        </motion.div>
+                    )}
+                </div>
+
                 <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 h-64 bg-emerald-500/10 blur-[100px] rounded-full -z-10 animate-pulse"></div>
 
                 <motion.div

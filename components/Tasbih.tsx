@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { RotateCcw, Target, Sparkles, Award, Volume2, VolumeX, Smartphone, Palette, Zap, History, Trash2, CheckCircle2, ChevronRight, ChevronLeft } from 'lucide-react';
-import { challengeService } from '../services/challengeService';
+import { challengeService, UserChallenge } from '../services/challengeService';
 import { Session } from '@supabase/supabase-js';
 
 const DHIKR_LIST = [
@@ -41,12 +42,26 @@ export const Tasbih: React.FC<TasbihProps> = ({ session }) => {
     const [theme, setTheme] = useState(THEMES[0]);
     const [isSoundEnabled, setIsSoundEnabled] = useState(true);
     const [isVibrateEnabled, setIsVibrateEnabled] = useState(true);
+    const [activeChallenge, setActiveChallenge] = useState<UserChallenge | null>(null);
 
     // Swipe Logic
     const [touchStart, setTouchStart] = useState<number | null>(null);
     const [touchEnd, setTouchEnd] = useState<number | null>(null);
 
-    // Sync to LocalStorage
+    // Sync to LocalStorage & Load Challenge
+    useEffect(() => {
+        if (session?.user) {
+            loadActiveChallenge();
+        }
+    }, [session]);
+
+    const loadActiveChallenge = async () => {
+        const challenges = await challengeService.getActiveChallengesByCategory(session!.user.id, 'tasbeeh');
+        if (challenges.length > 0) {
+            setActiveChallenge(challenges[0]);
+        }
+    };
+
     useEffect(() => {
         localStorage.setItem('tasbih_current', count.toString());
         localStorage.setItem('tasbih_laps', lap.toString());
@@ -73,7 +88,10 @@ export const Tasbih: React.FC<TasbihProps> = ({ session }) => {
 
     const recordMilestone = async (amount: number) => {
         if (session?.user) {
-            await challengeService.recordTasbeehCount(session.user.id, amount);
+            const res = await challengeService.recordTasbeehCount(session.user.id, amount);
+            if (res.success) {
+                loadActiveChallenge(); // Refresh progress
+            }
         }
     };
 
@@ -150,6 +168,35 @@ export const Tasbih: React.FC<TasbihProps> = ({ session }) => {
 
     return (
         <div className="w-full max-w-4xl mx-auto px-4 pb-44 flex flex-col items-center space-y-8 animate-fade-in relative">
+
+            {/* --- CHALLENGE PROGRESS HEADER --- */}
+            {activeChallenge && (
+                <div className="w-full glass-panel p-4 md:p-6 rounded-[2.5rem] border border-amber-500/20 bg-amber-500/5 flex items-center justify-between gap-4 shadow-xl animate-in slide-in-from-top-4 duration-700">
+                    <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-500">
+                            <Target size={20} className="md:w-6 md:h-6" />
+                        </div>
+                        <div className="text-right">
+                            <span className="text-[10px] font-black text-amber-500/60 uppercase tracking-widest block">التحدي الفعال</span>
+                            <h4 className="text-xs md:text-sm font-black text-white">{activeChallenge.challenge_details?.title}</h4>
+                            <p className="text-[9px] text-gray-500 font-bold">المتبقي: {(activeChallenge.challenge_details?.total_pages || 0) - activeChallenge.pages_completed} تسبيحة</p>
+                        </div>
+                    </div>
+                    <div className="flex-1 max-w-[120px] md:max-w-[200px] space-y-2">
+                        <div className="flex justify-between text-[8px] font-black text-amber-500/60 uppercase">
+                            <span>{Math.round((activeChallenge.pages_completed / (activeChallenge.challenge_details?.total_pages || 1)) * 100)}%</span>
+                            <span>{activeChallenge.pages_completed} / {activeChallenge.challenge_details?.total_pages}</span>
+                        </div>
+                        <div className="h-1.5 md:h-2 bg-black/40 rounded-full overflow-hidden border border-white/5">
+                            <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${Math.min(100, (activeChallenge.pages_completed / (activeChallenge.challenge_details?.total_pages || 1)) * 100)}%` }}
+                                className="h-full bg-gradient-to-r from-amber-600 via-amber-400 to-yellow-400 shadow-[0_0_10px_rgba(251,191,36,0.2)]"
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* --- TOP SETTINGS BAR --- */}
             <div className="w-full glass-panel p-4 rounded-[2.5rem] border border-white/10 flex items-center justify-between shadow-2xl backdrop-blur-3xl">
