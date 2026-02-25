@@ -63,32 +63,26 @@ export const Azkar: React.FC<AzkarProps> = ({ session }) => {
         setHasRecordedCompletion(false); // Reset for new category
     }, [selectedCategory]);
 
-    // Track completion for challenges
-    useEffect(() => {
-        if (!selectedCategory || !session?.user || azkarContent.length === 0 || hasRecordedCompletion) return;
-
-        const completedItems = azkarContent.filter(item => (counts[item.ID] || 0) >= (item.REPEAT || 1)).length;
-        const isFullyDone = completedItems === azkarContent.length;
-
-        if (isFullyDone) {
-            handleCategoryCompletion();
-        }
-    }, [counts, azkarContent, selectedCategory, session, hasRecordedCompletion]);
+    // Track if all items in the current session are done
+    const completedItems = azkarContent.filter(item => (counts[item.ID] || 0) >= (item.REPEAT || 1)).length;
+    const isFullyDone = azkarContent.length > 0 && completedItems === azkarContent.length;
 
     const handleCategoryCompletion = async () => {
-        if (!selectedCategory || !session?.user) return;
+        if (!selectedCategory || !session?.user || hasRecordedCompletion) return;
 
         let type: 'morning' | 'evening' | null = null;
         if (selectedCategory.TITLE.includes('أذكار الصباح')) type = 'morning';
         else if (selectedCategory.TITLE.includes('أذكار المساء')) type = 'evening';
 
-        if (type) {
-            setHasRecordedCompletion(true);
-            const result = await challengeService.recordAzkarCompletion(session.user.id, type);
-            if (result.success) {
-                console.log(`Successfully recorded ${type} azkar completion`);
-                loadActiveChallenge(); // Refresh progress
-            }
+        // Even if not morning/evening, we record it as a general activity
+        setHasRecordedCompletion(true);
+
+        const activityType = type || 'general';
+        const result = await challengeService.recordAzkarCompletion(session.user.id, type || 'morning'); // Fallback to morning for points if not specified
+
+        if (result.success) {
+            console.log(`Successfully recorded ${activityType} azkar completion`);
+            loadActiveChallenge(); // Refresh progress
         }
     };
 
@@ -154,7 +148,6 @@ export const Azkar: React.FC<AzkarProps> = ({ session }) => {
         cat.TITLE.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const completedItems = azkarContent.filter(item => (counts[item.ID] || 0) >= (item.REPEAT || 1)).length;
     const progressPercent = azkarContent.length > 0 ? (completedItems / azkarContent.length) * 100 : 0;
 
     // View: Selected Category (Azkar List)
@@ -294,6 +287,62 @@ export const Azkar: React.FC<AzkarProps> = ({ session }) => {
                                 );
                             })}
                         </AnimatePresence>
+
+                        {/* --- FINAL ACTION & DUA SECTION --- */}
+                        {isFullyDone && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 30 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="mt-12 py-10 space-y-8"
+                            >
+                                {!hasRecordedCompletion ? (
+                                    <button
+                                        onClick={handleCategoryCompletion}
+                                        className="w-full py-8 md:py-12 bg-white text-black rounded-[2.5rem] md:rounded-[4rem] font-black text-xl md:text-5xl hover:bg-emerald-500 hover:text-white transition-all duration-700 shadow-[0_20px_60px_rgba(255,255,255,0.1)] active:scale-95 flex items-center justify-center gap-6 border-4 border-white/20 group"
+                                    >
+                                        <Award size={40} className="md:w-16 md:h-16 group-hover:rotate-12 transition-transform" />
+                                        تم إنهاء الورد بنجاح
+                                    </button>
+                                ) : (
+                                    <motion.div
+                                        initial={{ scale: 0.9, opacity: 0 }}
+                                        animate={{ scale: 1, opacity: 1 }}
+                                        className="glass-panel p-8 md:p-16 rounded-[2.5rem] md:rounded-[4rem] border-2 border-emerald-500/40 bg-emerald-500/5 shadow-2xl relative overflow-hidden text-center"
+                                    >
+                                        <div className="absolute top-0 right-0 p-8 opacity-5">
+                                            <Quote size={120} className="text-emerald-500" />
+                                        </div>
+
+                                        <div className="relative z-10 space-y-6 md:space-y-10">
+                                            <div className="w-20 h-20 md:w-32 md:h-32 bg-emerald-500/20 rounded-full flex items-center justify-center text-emerald-400 mx-auto shadow-inner border border-emerald-500/30">
+                                                <Sparkles size={40} className="md:w-16 md:h-16 animate-pulse" />
+                                            </div>
+
+                                            <div className="space-y-4">
+                                                <h4 className="text-2xl md:text-5xl font-black text-white">تقبل الله طاعتك وغفر ذنبك</h4>
+                                                <div className="h-1 w-24 bg-emerald-500/30 mx-auto rounded-full"></div>
+                                            </div>
+
+                                            <div className="bg-black/40 p-6 md:p-12 rounded-[2rem] md:rounded-[3rem] border border-white/5 shadow-inner">
+                                                <p className="font-quran text-2xl md:text-5xl text-emerald-200 leading-[1.8] md:leading-[1.6]">
+                                                    "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ..."
+                                                </p>
+                                                <p className="text-emerald-500/50 text-[10px] md:text-lg font-black uppercase tracking-widest mt-6 md:mt-10 italic">
+                                                    سيد الاستغفار
+                                                </p>
+                                            </div>
+
+                                            <button
+                                                onClick={() => setSelectedCategory(null)}
+                                                className="px-10 py-4 bg-white/5 hover:bg-white/10 text-white rounded-2xl text-xs md:text-xl font-black transition-all border border-white/10"
+                                            >
+                                                العودة للقائمة الرئيسية
+                                            </button>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </motion.div>
+                        )}
                     </div>
                 )}
             </div>
