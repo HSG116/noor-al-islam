@@ -18,7 +18,7 @@ import { Competitions } from './components/Competitions';
 import { SURAH_START_PAGES } from './services/quranService';
 import { ViewState, Surah } from './types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Loader2, Calendar, BookOpen, Sparkles, ChevronLeft, Star, Heart, ArrowRight, HelpCircle, Library, Trophy } from 'lucide-react';
+import { Loader2, Calendar, BookOpen, Sparkles, ChevronLeft, Star, Heart, ArrowRight, HelpCircle, Library, Trophy, Clock, Sun, MapPin, Radio as RadioIcon, Disc, Layers } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { Session } from '@supabase/supabase-js';
 import { getUserProfile, CompetitionUser } from './services/competitionService';
@@ -50,7 +50,7 @@ const Stars = () => (
   </div>
 );
 
-const LOGO_URL = "https://iili.io/fkA4vvj.png";
+const LOGO_URL = "./logo.png";
 
 const App = () => {
   const [view, setView] = useState<ViewState>(ViewState.HOME);
@@ -181,6 +181,65 @@ const App = () => {
               <DailyVerse />
             </div>
 
+            {/* --- SPIRITUAL TOOLS GRID --- */}
+            <div className="relative z-10 space-y-6">
+              <div className="flex items-center justify-between px-2">
+                <h2 className="text-xl md:text-3xl font-black text-white">الأدوات الإسلامية</h2>
+                <div className="h-px flex-1 mx-4 bg-gradient-to-r from-emerald-500/50 to-transparent"></div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <ToolCard
+                  onClick={() => setView(ViewState.PRAYER_TIMES)}
+                  icon={<Clock size={24} />}
+                  label="مواقيت الصلاة"
+                  color="emerald"
+                />
+                <ToolCard
+                  onClick={() => setView(ViewState.AZKAR)}
+                  icon={<Sun size={24} />}
+                  label="الأذكار"
+                  color="amber"
+                />
+                <ToolCard
+                  onClick={() => setView(ViewState.TASBIH)}
+                  icon={<Sparkles size={24} />}
+                  label="المسبحة"
+                  color="teal"
+                />
+                <ToolCard
+                  onClick={() => setView(ViewState.QIBLA)}
+                  icon={<MapPin size={24} />}
+                  label="القبلة"
+                  color="rose"
+                />
+                <ToolCard
+                  onClick={() => setView(ViewState.RADIO)}
+                  icon={<RadioIcon size={24} />}
+                  label="الراديو"
+                  color="blue"
+                />
+                <ToolCard
+                  onClick={() => setView(ViewState.REMIX)}
+                  icon={<Disc size={24} />}
+                  label="ريمكس"
+                  color="purple"
+                />
+                <ToolCard
+                  onClick={() => setView(ViewState.MOSQUES)}
+                  icon={<MapPin size={24} />}
+                  label="المساجد"
+                  color="indigo"
+                />
+                <ToolCard
+                  onClick={() => setView(ViewState.DASHBOARD)}
+                  icon={<Layers size={24} />}
+                  label="الإحصائيات"
+                  color="orange"
+                />
+              </div>
+            </div>
+
             {/* --- CLEAN NAVIGATION CARDS --- */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 relative z-10 pb-20">
 
@@ -268,6 +327,7 @@ const App = () => {
             </div>
           </div>
         );
+
     }
   };
 
@@ -306,6 +366,31 @@ const App = () => {
         </main>
       </div>
     </div>
+  );
+};
+
+const ToolCard = ({ onClick, icon, label, color }: { onClick: () => void, icon: any, label: string, color: string }) => {
+  const colorMap: any = {
+    emerald: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    amber: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    teal: 'bg-teal-500/10 text-teal-400 border-teal-500/20',
+    rose: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+    blue: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+    purple: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+    indigo: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+    orange: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
+  };
+
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-col items-center justify-center p-4 rounded-3xl border transition-all duration-300 hover:scale-105 active:scale-95 group shadow-lg ${colorMap[color] || colorMap.emerald}`}
+    >
+      <div className="mb-2 transition-transform group-hover:rotate-12">
+        {icon}
+      </div>
+      <span className="text-[10px] md:text-xs font-black">{label}</span>
+    </button>
   );
 };
 

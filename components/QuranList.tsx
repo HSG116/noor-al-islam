@@ -12,7 +12,7 @@ interface QuranListProps {
   onBack: () => void;
 }
 
-const LOGO_URL = "https://iili.io/fkA4vvj.png";
+const LOGO_URL = "./logo.png";
 
 export const QuranList: React.FC<QuranListProps> = ({ onSelectSurah, session, onBack }) => {
   const [surahs, setSurahs] = useState<Surah[]>([]);
