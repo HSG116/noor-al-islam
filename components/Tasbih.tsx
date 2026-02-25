@@ -43,6 +43,8 @@ export const Tasbih: React.FC<TasbihProps> = ({ session }) => {
     const [isSoundEnabled, setIsSoundEnabled] = useState(true);
     const [isVibrateEnabled, setIsVibrateEnabled] = useState(true);
     const [activeChallenge, setActiveChallenge] = useState<UserChallenge | null>(null);
+    const [pendingSyncCount, setPendingSyncCount] = useState(0);
+    const [isSyncing, setIsSyncing] = useState(false);
 
     // Swipe Logic
     const [touchStart, setTouchStart] = useState<number | null>(null);
@@ -54,6 +56,29 @@ export const Tasbih: React.FC<TasbihProps> = ({ session }) => {
             loadActiveChallenge();
         }
     }, [session]);
+
+    // Live Sync to Database (Debounced)
+    useEffect(() => {
+        if (!session?.user || pendingSyncCount === 0) return;
+
+        const timer = setTimeout(async () => {
+            setIsSyncing(true);
+            const amountToSync = pendingSyncCount;
+            // Optimistically reset pending count to handle rapid clicks during sync
+            setPendingSyncCount(0);
+
+            const res = await challengeService.recordTasbeehCount(session.user.id, amountToSync);
+            if (!res.success) {
+                // If failed, add back to pending (simple retry mechanism)
+                setPendingSyncCount(prev => prev + amountToSync);
+            } else {
+                loadActiveChallenge(); // Refresh challenge progress
+            }
+            setIsSyncing(false);
+        }, 2000);
+
+        return () => clearTimeout(timer);
+    }, [pendingSyncCount, session]);
 
     const loadActiveChallenge = async () => {
         const challenges = await challengeService.getActiveChallengesByCategory(session!.user.id, 'tasbeeh');
@@ -86,15 +111,6 @@ export const Tasbih: React.FC<TasbihProps> = ({ session }) => {
         } catch (e) { console.warn("Audio Context blocked", e); }
     };
 
-    const recordMilestone = async (amount: number) => {
-        if (session?.user) {
-            const res = await challengeService.recordTasbeehCount(session.user.id, amount);
-            if (res.success) {
-                loadActiveChallenge(); // Refresh progress
-            }
-        }
-    };
-
     const handleIncrement = useCallback(() => {
         playClick();
         if (isVibrateEnabled && navigator.vibrate) navigator.vibrate(20);
@@ -108,15 +124,13 @@ export const Tasbih: React.FC<TasbihProps> = ({ session }) => {
                 setLap(l => l + 1);
                 if (isVibrateEnabled && navigator.vibrate) navigator.vibrate([100, 50, 100]);
                 setSessionHistory(h => [target, ...h].slice(0, 5));
-
-                // Record completion in DB
-                recordMilestone(target);
-
                 return 0;
             }
             return next;
         });
+
         setTotalCount(prev => prev + 1);
+        setPendingSyncCount(prev => prev + 1);
     }, [target, isSoundEnabled, isVibrateEnabled, session]);
 
     const handleResetCurrent = () => {
@@ -173,25 +187,36 @@ export const Tasbih: React.FC<TasbihProps> = ({ session }) => {
             {activeChallenge && (
                 <div className="w-full glass-panel p-4 md:p-6 rounded-[2.5rem] border border-amber-500/20 bg-amber-500/5 flex items-center justify-between gap-4 shadow-xl animate-in slide-in-from-top-4 duration-700">
                     <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-500">
+                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-500 relative">
                             <Target size={20} className="md:w-6 md:h-6" />
+                            {isSyncing && (
+                                <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                                </span>
+                            )}
                         </div>
                         <div className="text-right">
-                            <span className="text-[10px] font-black text-amber-500/60 uppercase tracking-widest block">التحدي الفعال</span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black text-amber-500/60 uppercase tracking-widest block">التحدي الفعال</span>
+                                {pendingSyncCount > 0 && (
+                                    <span className="text-[8px] font-bold text-emerald-400 animate-pulse bg-emerald-500/10 px-1.5 py-0.5 rounded-full">جاري المزامنة ({pendingSyncCount})</span>
+                                )}
+                            </div>
                             <h4 className="text-xs md:text-sm font-black text-white">{activeChallenge.challenge_details?.title}</h4>
-                            <p className="text-[9px] text-gray-500 font-bold">المتبقي: {(activeChallenge.challenge_details?.total_pages || 0) - activeChallenge.pages_completed} تسبيحة</p>
+                            <p className="text-[9px] text-gray-500 font-bold">المتبقي: {Math.max(0, (activeChallenge.challenge_details?.total_pages || 0) - activeChallenge.pages_completed - pendingSyncCount)} تسبيحة</p>
                         </div>
                     </div>
                     <div className="flex-1 max-w-[120px] md:max-w-[200px] space-y-2">
                         <div className="flex justify-between text-[8px] font-black text-amber-500/60 uppercase">
-                            <span>{Math.round((activeChallenge.pages_completed / (activeChallenge.challenge_details?.total_pages || 1)) * 100)}%</span>
-                            <span>{activeChallenge.pages_completed} / {activeChallenge.challenge_details?.total_pages}</span>
+                            <span>{Math.round(((activeChallenge.pages_completed + pendingSyncCount) / (activeChallenge.challenge_details?.total_pages || 1)) * 100)}%</span>
+                            <span>{activeChallenge.pages_completed + pendingSyncCount} / {activeChallenge.challenge_details?.total_pages}</span>
                         </div>
                         <div className="h-1.5 md:h-2 bg-black/40 rounded-full overflow-hidden border border-white/5">
                             <motion.div
                                 initial={{ width: 0 }}
-                                animate={{ width: `${Math.min(100, (activeChallenge.pages_completed / (activeChallenge.challenge_details?.total_pages || 1)) * 100)}%` }}
-                                className="h-full bg-gradient-to-r from-amber-600 via-amber-400 to-yellow-400 shadow-[0_0_10px_rgba(251,191,36,0.2)]"
+                                animate={{ width: `${Math.min(100, ((activeChallenge.pages_completed + pendingSyncCount) / (activeChallenge.challenge_details?.total_pages || 1)) * 100)}%` }}
+                                className="h-full bg-gradient-to-r from-amber-600 via-amber-400 to-yellow-400 shadow-[0_0_10px_rgba(251,191,36,0.2)] transition-all duration-300"
                             />
                         </div>
                     </div>
