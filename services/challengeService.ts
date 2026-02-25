@@ -29,16 +29,63 @@ export const challengeService = {
 
     // اشتراك المستخدم في تحدي
     async joinChallenge(userId: string, challengeId: string) {
-        const { data, error } = await supabase
+        // التحقق من وجود تحدي نشط لليوزر (ممنوع أخذ تحدي آخر إذا كان هنالك تحدي فعال)
+        const { data: activeChallenges } = await supabase
             .from('user_challenges')
-            .upsert({ user_id: userId, challenge_id: challengeId, status: 'active' })
-            .select()
-            .single();
+            .select('id, challenge_id, status')
+            .eq('user_id', userId)
+            .eq('status', 'active');
 
-        // تحديث ملف المستخدم بالتحدي الحالي
-        await supabase.from('profiles').update({ current_challenge_id: challengeId }).eq('id', userId);
+        if (activeChallenges && activeChallenges.length > 0) {
+            const currentActive = activeChallenges[0];
+            if (currentActive.challenge_id === challengeId) {
+                return { error: { message: 'أنت مشترك بالفعل في هذا التحدي وهو نشط حالياً!' } };
+            } else {
+                return { error: { message: 'يوجد لديك تحدي قرآني نشط لم تكمله بعد! يجب عليك إكمال تحديك الحالي قبل البدء بتحدي جديد.' } };
+            }
+        }
 
-        return { data, error };
+        // التحقق مما إذا كان المستخدم مشتركاً بالفعل (مثلاً أكمله ويريد إعادته أو مجمد)
+        const { data: existing } = await supabase
+            .from('user_challenges')
+            .select('id, status')
+            .eq('user_id', userId)
+            .eq('challenge_id', challengeId)
+            .limit(1);
+
+        let resultData, resultError;
+
+        if (existing && existing.length > 0) {
+            // تحديث الحالة وتصفير التقدم لبدء التحدي من جديد
+            const res = await supabase
+                .from('user_challenges')
+                .update({ status: 'active', last_page_read: 0, pages_completed: 0 })
+                .eq('id', existing[0].id)
+                .select()
+                .single();
+            resultData = res.data;
+            resultError = res.error;
+        } else {
+            // إضافة اشتراك جديد تماما وتجنب مشكلة الـ duplicate مع fallback
+            try {
+                const res = await supabase
+                    .from('user_challenges')
+                    .insert({ user_id: userId, challenge_id: challengeId, status: 'active', last_page_read: 0, pages_completed: 0 })
+                    .select()
+                    .single();
+                resultData = res.data;
+                resultError = res.error;
+            } catch (err: any) {
+                resultError = err;
+            }
+        }
+
+        if (!resultError) {
+            // تحديث ملف المستخدم بالتحدي الحالي
+            await supabase.from('profiles').update({ current_challenge_id: challengeId }).eq('id', userId);
+        }
+
+        return { data: resultData, error: resultError };
     },
 
     // جلب التحدي الحالي للمستخدم
@@ -54,14 +101,19 @@ export const challengeService = {
 
     // تسجيل قراءة صفحة مع نظام حماية
     async recordPageRead(userId: string, pageNumber: number, durationSeconds: number) {
-        // 1. نظام الحماية (أقل من 5 ثواني للصفحة يعتبر غش)
-        if (durationSeconds < 5) {
+        // 1. نظام الحماية (تخطي الصفحة في أقل من 9 ثواني يعتبر غش)
+        if (durationSeconds < 9) {
             const { data: profile } = await supabase.from('profiles').select('cheat_warnings').eq('id', userId).single();
             const newWarnings = (profile?.cheat_warnings || 0) + 1;
 
-            await supabase.from('profiles').update({ cheat_warnings: newWarnings }).eq('id', userId);
+            if (newWarnings >= 5) {
+                // Device ban will be enforced locally, but we still record 5 warnings in DB
+                await supabase.from('profiles').update({ cheat_warnings: 5, status: 'banned' }).eq('id', userId);
+                return { error: '🚫 تم حظر حسابك وجهازك بشكل نهائي لتجاوزك عدد التحذيرات المسموح بها في تخطي الصفحات!', warnings: 5, isBanned: true };
+            }
 
-            return { error: '⚠️ نظام الحماية: تمت القراءة بسرعة غير طبيعية! تحذير: ' + newWarnings + '/5', warnings: newWarnings };
+            await supabase.from('profiles').update({ cheat_warnings: newWarnings }).eq('id', userId);
+            return { error: `⚠️ نظام الحماية: يرجى قراءة الصفحة بتأنٍ! لا يمكنك تخطي الصفحة بهذه السرعة.\nتحذير رقم: ${newWarnings}/5`, warnings: newWarnings };
         }
 
         // 2. تحديث التحدي

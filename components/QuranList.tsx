@@ -177,6 +177,8 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
   const [primarySurah, setPrimarySurah] = useState<Surah | null>(null);
   const [status, setStatus] = useState<'not_started' | 'in_progress' | 'completed'>('not_started');
   const [activeChallenge, setActiveChallenge] = useState<any>(null);
+  const [showSequenceWarning, setShowSequenceWarning] = useState(false);
+  const [expectedPage, setExpectedPage] = useState<number>(1);
 
   const pageStartTimeRef = useRef<number>(Date.now());
   const [fontSize, setFontSize] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 18 : 24));
@@ -220,17 +222,37 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
         setStatus(s);
         const challenge = await challengeService.getActiveUserChallenge(session.user.id);
         setActiveChallenge(challenge);
+
+        if (challenge) {
+          const expPage = challenge.last_page_read || 1;
+          setExpectedPage(expPage);
+          // If the user tries to read a page that is > expectedPage + 1
+          if (currentPage > expPage + 1 || currentPage < expPage - 5) {
+            setShowSequenceWarning(true);
+          }
+        }
       }
       setLoading(false);
     };
 
     const handlePageFinish = async () => {
       const duration = Math.floor((Date.now() - pageStartTimeRef.current) / 1000);
-      if (session?.user && pageData) {
-        const result = await challengeService.recordPageRead(session.user.id, currentPage, duration);
-        if (result.error) alert(result.error);
-      }
       pageStartTimeRef.current = Date.now();
+
+      if (session?.user && pageData && activeChallenge) {
+        const expPage = activeChallenge.last_page_read || 1;
+
+        if (currentPage <= expPage + 1) {
+          const result = await challengeService.recordPageRead(session.user.id, currentPage, duration);
+          if (result.error) {
+            alert(result.error);
+            if (result.isBanned) {
+              localStorage.setItem('islamic_app_banned', 'true');
+              window.location.reload();
+            }
+          }
+        }
+      }
     };
 
     loadInit();
@@ -326,9 +348,9 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
   const handleAyahDoubleClick = async (surahNum: number, ayahNum: number, surahName: string) => {
     if (clickTimeoutRef.current) { clearTimeout(clickTimeoutRef.current); clickTimeoutRef.current = null; }
     setTafseerLoading(true);
-    setTafseerModal({ title: `الآية ${ayahNum} - سورة ${surahName}`, text: '' });
+    setTafseerModal({ title: `الآية ${ayahNum} - ${surahName}`, text: '' });
     const tafseerText = await fetchTafseer(surahNum, ayahNum, selectedTafseer);
-    setTafseerModal({ title: `الآية ${ayahNum} - سورة ${surahName}`, text: tafseerText });
+    setTafseerModal({ title: `الآية ${ayahNum} - ${surahName}`, text: tafseerText });
     setTafseerLoading(false);
   };
 
@@ -348,7 +370,7 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
         elements.push(
           <div key={`header-${ayah.surah.number}`} className="mt-8 mb-6 text-center select-none animate-in zoom-in w-full block clear-both">
             <div className="inline-flex items-center justify-center w-full max-w-xs mx-auto border-y-2 border-emerald-500/30 py-2 bg-emerald-500/5 mb-4 rounded-lg">
-              <span className="font-quran text-2xl text-emerald-300 shadow-black drop-shadow-sm">سورة {ayah.surah.name.replace('سورة', '')}</span>
+              <span className="font-quran text-2xl text-emerald-300 shadow-black drop-shadow-sm">{ayah.surah.name}</span>
             </div>
             {ayah.surah.number !== 9 && <div className="font-quran text-emerald-400 text-xl mb-6">بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ</div>}
           </div>
@@ -394,6 +416,37 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
             <div className="text-right shrink-0">
               <span className="text-[11px] font-black text-white tabular-nums">{Math.round((activeChallenge.pages_completed / (activeChallenge.challenge_details?.total_pages || 604)) * 100)}%</span>
               <span className="text-[8px] text-gray-400 block font-bold">إنجاز</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sequence Warning Popup */}
+      {showSequenceWarning && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-sm"></div>
+          <div className="relative w-full max-w-md bg-[#1e293b] border border-red-500/50 rounded-3xl p-8 shadow-2xl z-10 text-center animate-in zoom-in duration-300">
+            <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6 text-red-500">
+              <span className="text-4xl">⚠️</span>
+            </div>
+            <h3 className="font-black text-2xl text-white mb-4">خارج مسار التحدي!</h3>
+            <p className="text-gray-300 mb-8 leading-relaxed">
+              أنت الآن تقرأ في صفحة مختلفة عن مسار تحديك الحالي. صفحتك المستحقة هي <strong className="text-emerald-400 text-xl mx-1">{expectedPage}</strong>.<br /><br />
+              القراءة العشوائية <strong>غير مسموحة</strong> في مسابقات التحدي. سيتم إيقاف احتساب تقدّمك حتى تعود للمسار الصحيح.
+            </p>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => { setShowSequenceWarning(false); setCurrentPage(expectedPage); }}
+                className="w-full py-4 rounded-xl bg-emerald-500 text-white font-black hover:bg-emerald-400 transition-all shadow-lg active:scale-95"
+              >
+                العودة لصفحة التحدي الآن
+              </button>
+              <button
+                onClick={() => setShowSequenceWarning(false)}
+                className="w-full py-3 rounded-xl bg-white/5 text-gray-400 font-bold hover:bg-white/10 hover:text-white transition-all"
+              >
+                متابعة تلاوة حرة (بدون تقدم)
+              </button>
             </div>
           </div>
         </div>

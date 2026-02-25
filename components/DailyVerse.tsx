@@ -42,65 +42,66 @@ export const DailyVerse: React.FC = () => {
     };
 
     return (
-        <motion.div 
+        <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-3xl mx-auto px-4 group"
+            className="w-full max-w-4xl mx-auto px-4 group"
         >
-            <div className="glass-panel rounded-[2.5rem] md:rounded-[4rem] p-8 md:p-16 relative overflow-hidden border border-white/5 shadow-2xl bg-emerald-500/5">
+            <div className="crystal-glass rounded-[4rem] p-12 md:p-24 relative overflow-hidden border border-white/15 shadow-[0_30px_100px_rgba(0,0,0,0.6)]">
                 {/* Decorative Elements */}
-                <div className="absolute -top-24 -right-24 w-64 h-64 bg-emerald-500/10 rounded-full blur-[100px] animate-pulse"></div>
-                <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-teal-500/10 rounded-full blur-[100px] animate-pulse"></div>
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full radiant-rays opacity-40"></div>
+                <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-[100px] animate-pulse"></div>
+                <div className="absolute bottom-0 left-0 w-80 h-80 bg-teal-500/10 rounded-full blur-[100px] animate-pulse"></div>
 
-                <div className="relative flex flex-col items-center gap-8">
+                <div className="relative flex flex-col items-center gap-12">
                     {/* Premium Badge */}
                     <motion.div
                         whileHover={{ scale: 1.05 }}
-                        className="flex items-center gap-3 px-6 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shadow-lg"
+                        className="flex items-center gap-3 px-8 py-3 rounded-2xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.2)]"
                     >
-                        <Sparkles size={16} className="text-emerald-300" />
-                        <span className="text-[10px] md:text-xs font-black uppercase tracking-[0.3em]">آية اليوم المباركة</span>
+                        <Sparkles size={18} className="text-emerald-400" />
+                        <span className="text-xs md:text-sm font-black uppercase tracking-[0.4em]">آية اليوم المباركة</span>
                     </motion.div>
 
                     {/* Verse Text Area */}
-                    <div className="w-full text-center space-y-6">
-                        <motion.p 
+                    <div className="w-full text-center space-y-10">
+                        <motion.p
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             transition={{ delay: 0.3 }}
-                            className="font-quran text-3xl md:text-6xl leading-[1.6] md:leading-[1.6] text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] bg-gradient-to-b from-white to-emerald-100 bg-clip-text text-transparent"
+                            className="font-quran text-4xl md:text-7xl leading-[1.8] md:leading-[1.8] text-white drop-shadow-[0_15px_45px_rgba(0,0,0,0.7)] bg-gradient-to-b from-white via-white to-emerald-200 bg-clip-text text-transparent"
                         >
                             {todayVerse.text}
                         </motion.p>
-                        
-                        <motion.div 
+
+                        <motion.div
                             initial={{ opacity: 0 }}
-                            animate={{ opacity: 0.6 }}
+                            animate={{ opacity: 0.8 }}
                             transition={{ delay: 0.6 }}
-                            className="flex items-center justify-center gap-4"
+                            className="flex items-center justify-center gap-6"
                         >
-                            <div className="h-px w-12 bg-gradient-to-r from-transparent to-emerald-500/40"></div>
-                            <p className="text-emerald-400 font-black text-xs md:text-xl tracking-wide">
+                            <div className="h-px w-16 md:w-32 bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent"></div>
+                            <p className="text-emerald-400 font-black text-sm md:text-2xl tracking-widest bg-emerald-500/10 px-6 py-2 rounded-xl">
                                 {todayVerse.surah}
                             </p>
-                            <div className="h-px w-12 bg-gradient-to-l from-transparent to-emerald-500/40"></div>
+                            <div className="h-px w-16 md:w-32 bg-gradient-to-l from-transparent via-emerald-500/40 to-transparent"></div>
                         </motion.div>
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-4 bg-black/40 p-2 rounded-3xl border border-white/5 shadow-2xl">
+                    <div className="flex items-center gap-6 bg-black/40 p-2.5 rounded-[2rem] border border-white/10 shadow-3xl backdrop-blur-xl">
                         <button
                             onClick={copyToClipboard}
-                            className={`p-4 rounded-2xl transition-all duration-500 flex items-center gap-3 ${copied ? 'bg-emerald-500 text-white' : 'hover:bg-emerald-500/20 text-gray-400 hover:text-emerald-300'}`}
+                            className={`p-5 rounded-[1.5rem] transition-all duration-700 flex items-center gap-4 ${copied ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)]' : 'hover:bg-emerald-500/20 text-emerald-100/60 hover:text-white'}`}
                         >
-                            {copied ? <Check size={20} /> : <Copy size={20} />}
+                            {copied ? <Check size={24} /> : <Copy size={24} />}
                             {copied && <span className="text-xs font-black uppercase tracking-widest">تم النسخ</span>}
                         </button>
-                        <div className="w-px h-8 bg-white/5"></div>
+                        <div className="w-px h-10 bg-white/10"></div>
                         <button
-                            className="p-4 rounded-2xl hover:bg-teal-500/20 text-gray-400 hover:text-teal-300 transition-all duration-500"
+                            className="p-5 rounded-[1.5rem] hover:bg-teal-500/20 text-emerald-100/60 hover:text-white transition-all duration-700"
                         >
-                            <Share2 size={20} />
+                            <Share2 size={24} />
                         </button>
                     </div>
                 </div>

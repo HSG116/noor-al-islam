@@ -41,31 +41,31 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView }) => {
   return (
     <>
       {/* More Menu Overlay */}
-      <div 
+      <div
         className={`fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm transition-opacity duration-500 ${isMoreOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         onClick={() => setIsMoreOpen(false)}
       />
 
-      <div 
+      <div
         className={`fixed bottom-0 inset-x-0 z-[70] transition-transform duration-500 ease-out transform ${isMoreOpen ? 'translate-y-0' : 'translate-y-full'}`}
       >
         <div className="mx-auto max-w-lg bg-[#0f172a] border-t border-white/10 rounded-t-[2.5rem] p-8 shadow-[0_-20px_50px_rgba(0,0,0,0.5)]">
           <div className="w-12 h-1.5 bg-white/10 rounded-full mx-auto mb-8" />
           <div className="flex items-center justify-between mb-6">
-             <h3 className="text-xl font-black text-white">المزيد من الأقسام</h3>
-             <button onClick={() => setIsMoreOpen(false)} className="p-2 bg-white/5 rounded-full text-gray-400 hover:text-white">
-               <X size={20} />
-             </button>
+            <h3 className="text-xl font-black text-white">المزيد من الأقسام</h3>
+            <button onClick={() => setIsMoreOpen(false)} className="p-2 bg-white/5 rounded-full text-gray-400 hover:text-white">
+              <X size={20} />
+            </button>
           </div>
-          
+
           <div className="space-y-3 max-h-[60vh] overflow-y-auto no-scrollbar">
             {moreItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
                 className={`w-full group flex items-center gap-4 p-4 rounded-2xl border transition-all duration-300 
-                  ${currentView === item.id 
-                    ? 'bg-emerald-600/20 border-emerald-500/50 shadow-lg' 
+                  ${currentView === item.id
+                    ? 'bg-emerald-600/20 border-emerald-500/50 shadow-lg'
                     : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
               >
                 <div className={`p-3 rounded-xl bg-black/20 ${item.color} group-hover:scale-110 transition-transform`}>

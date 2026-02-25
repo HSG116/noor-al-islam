@@ -27,19 +27,26 @@ const Stars = () => (
   <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
     <div className="mesh-gradient absolute inset-0 opacity-20"></div>
     <div className="mesh-blob absolute w-[400px] h-[400px] md:w-[700px] md:h-[700px] bg-emerald-500/10 -top-48 -left-48 rounded-full blur-[150px] animate-pulse"></div>
-    {[...Array(30)].map((_, i) => (
-      <div
-        key={i}
-        className="absolute bg-white/10 rounded-full animate-pulse"
-        style={{
-          top: `${Math.random() * 100}%`,
-          left: `${Math.random() * 100}%`,
-          width: `${Math.random() * 2 + 1}px`,
-          height: `${Math.random() * 2 + 1}px`,
-          animationDuration: `${Math.random() * 4 + 2}s`
-        }}
-      />
-    ))}
+    {/* Small twinkling stars */}
+    {[...Array(150)].map((_, i) => {
+      const size = Math.random() * 2 + 0.5; // Small sizes: 0.5px to 2.5px
+      const isGlowing = Math.random() > 0.8; // 20% chances for a brighter glow
+      return (
+        <div
+          key={i}
+          className={`absolute rounded-full animate-pulse blur-[0.3px] ${isGlowing ? 'bg-white shadow-[0_0_8px_2px_rgba(255,255,255,0.7)]' : 'bg-white/40'}`}
+          style={{
+            top: `${Math.random() * 100}%`,
+            left: `${Math.random() * 100}%`,
+            width: `${size}px`,
+            height: `${size}px`,
+            animationDuration: `${Math.random() * 4 + 1.5}s`,
+            animationDelay: `${Math.random() * 5}s`,
+            opacity: Math.random() * 0.6 + 0.2
+          }}
+        />
+      );
+    })}
   </div>
 );
 
@@ -265,6 +272,18 @@ const App = () => {
   };
 
   if (loading) return <div className="min-h-screen bg-[#020617] flex items-center justify-center"><Loader2 className="animate-spin text-emerald-500" size={48} /></div>;
+
+  if (typeof window !== 'undefined' && localStorage.getItem('islamic_app_banned') === 'true') {
+    return (
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center text-red-500 font-bold p-10 text-center space-y-6">
+        <div className="w-24 h-24 bg-red-500/10 rounded-full flex items-center justify-center animate-pulse border border-red-500/30">
+          <span className="text-5xl">🚫</span>
+        </div>
+        <h1 className="text-4xl">تم حظر الجهاز والآي بي نهائياً</h1>
+        <p className="text-red-400 max-w-sm">لقد تم رصد تجاوزات متكررة لأنظمة الحماية والغش في التحديات. تم حظر هذا الجهاز من استخدام التطبيق.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#020617] text-white relative flex flex-col overflow-x-hidden selection:bg-emerald-500/30 font-sans">
