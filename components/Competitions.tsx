@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, Star, Target, Users, Zap, Calendar, Medal, Crown, ArrowRight, Flag, Loader2, Sparkles, User, LogIn } from 'lucide-react';
+import { Trophy, Star, Target, Users, Zap, Calendar, Medal, Crown, ArrowRight, Flag, Loader2, Sparkles, User, LogIn, Sun, BookOpen } from 'lucide-react';
 import { challengeService, Challenge } from '../services/challengeService';
 import { supabase } from '../supabaseClient';
 
