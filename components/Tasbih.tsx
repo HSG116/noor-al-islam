@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { RotateCcw, Target, Sparkles, Award, Volume2, VolumeX, Smartphone, Palette, Zap, History, Trash2, CheckCircle2, ChevronRight, ChevronLeft } from 'lucide-react';
+import { challengeService } from '../services/challengeService';
+import { Session } from '@supabase/supabase-js';
 
 const DHIKR_LIST = [
     { text: 'سُبْحَانَ اللَّهِ', label: 'تَسْبِيح' },
@@ -20,7 +22,11 @@ const THEMES = [
 
 const TARGETS = [33, 100, 1000, 0];
 
-export const Tasbih: React.FC = () => {
+interface TasbihProps {
+    session?: Session | null;
+}
+
+export const Tasbih: React.FC<TasbihProps> = ({ session }) => {
     // Persistent states
     const [count, setCount] = useState(() => Number(localStorage.getItem('tasbih_current') || 0));
     const [lap, setLap] = useState(() => Number(localStorage.getItem('tasbih_laps') || 0));
@@ -35,7 +41,7 @@ export const Tasbih: React.FC = () => {
     const [theme, setTheme] = useState(THEMES[0]);
     const [isSoundEnabled, setIsSoundEnabled] = useState(true);
     const [isVibrateEnabled, setIsVibrateEnabled] = useState(true);
-    
+
     // Swipe Logic
     const [touchStart, setTouchStart] = useState<number | null>(null);
     const [touchEnd, setTouchEnd] = useState<number | null>(null);
@@ -65,6 +71,12 @@ export const Tasbih: React.FC = () => {
         } catch (e) { console.warn("Audio Context blocked", e); }
     };
 
+    const recordMilestone = async (amount: number) => {
+        if (session?.user) {
+            await challengeService.recordTasbeehCount(session.user.id, amount);
+        }
+    };
+
     const handleIncrement = useCallback(() => {
         playClick();
         if (isVibrateEnabled && navigator.vibrate) navigator.vibrate(20);
@@ -78,12 +90,16 @@ export const Tasbih: React.FC = () => {
                 setLap(l => l + 1);
                 if (isVibrateEnabled && navigator.vibrate) navigator.vibrate([100, 50, 100]);
                 setSessionHistory(h => [target, ...h].slice(0, 5));
+
+                // Record completion in DB
+                recordMilestone(target);
+
                 return 0;
             }
             return next;
         });
         setTotalCount(prev => prev + 1);
-    }, [target, isSoundEnabled, isVibrateEnabled]);
+    }, [target, isSoundEnabled, isVibrateEnabled, session]);
 
     const handleResetCurrent = () => {
         setCount(0);
@@ -134,15 +150,15 @@ export const Tasbih: React.FC = () => {
 
     return (
         <div className="w-full max-w-4xl mx-auto px-4 pb-44 flex flex-col items-center space-y-8 animate-fade-in relative">
-            
+
             {/* --- TOP SETTINGS BAR --- */}
             <div className="w-full glass-panel p-4 rounded-[2.5rem] border border-white/10 flex items-center justify-between shadow-2xl backdrop-blur-3xl">
                 <div className="flex gap-2.5">
                     {THEMES.map(t => (
-                        <button 
-                            key={t.id} 
-                            onClick={() => setTheme(t)} 
-                            className={`w-9 h-9 rounded-full border-2 transition-all duration-300 relative ${theme.id === t.id ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-40 hover:opacity-100'}`} 
+                        <button
+                            key={t.id}
+                            onClick={() => setTheme(t)}
+                            className={`w-9 h-9 rounded-full border-2 transition-all duration-300 relative ${theme.id === t.id ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-40 hover:opacity-100'}`}
                             style={{ backgroundColor: t.primary }}
                         >
                             {theme.id === t.id && <div className="absolute inset-0 bg-white/30 rounded-full animate-pulse"></div>}
@@ -150,14 +166,14 @@ export const Tasbih: React.FC = () => {
                     ))}
                 </div>
                 <div className="flex items-center gap-2">
-                    <button 
-                        onClick={() => setIsSoundEnabled(!isSoundEnabled)} 
+                    <button
+                        onClick={() => setIsSoundEnabled(!isSoundEnabled)}
                         className={`p-3 rounded-2xl transition-all duration-300 ${isSoundEnabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-gray-600'}`}
                     >
                         {isSoundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
                     </button>
-                    <button 
-                        onClick={() => setIsVibrateEnabled(!isVibrateEnabled)} 
+                    <button
+                        onClick={() => setIsVibrateEnabled(!isVibrateEnabled)}
                         className={`p-3 rounded-2xl transition-all duration-300 ${isVibrateEnabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-gray-600'}`}
                     >
                         <Smartphone size={20} />
@@ -166,17 +182,17 @@ export const Tasbih: React.FC = () => {
             </div>
 
             {/* --- DHIKR LABEL DISPLAY (SWIPEABLE AREA) --- */}
-            <div 
+            <div
                 className="w-full text-center py-4 relative group cursor-grab active:cursor-grabbing select-none"
                 onTouchStart={onTouchStart}
                 onTouchMove={onTouchMove}
                 onTouchEnd={onTouchEnd}
             >
                 <div className="flex items-center justify-center gap-8">
-                    <button onClick={() => {setSelectedDhikr(prev => (prev - 1 + DHIKR_LIST.length) % DHIKR_LIST.length); handleResetCurrent();}} className="p-2 text-gray-600 hover:text-white transition-colors">
+                    <button onClick={() => { setSelectedDhikr(prev => (prev - 1 + DHIKR_LIST.length) % DHIKR_LIST.length); handleResetCurrent(); }} className="p-2 text-gray-600 hover:text-white transition-colors">
                         <ChevronRight size={24} />
                     </button>
-                    
+
                     <div className="flex flex-col items-center animate-in slide-in-from-bottom-2 duration-500" key={selectedDhikr}>
                         <h2 className="text-3xl md:text-5xl font-quran text-white font-black drop-shadow-xl tracking-wide">
                             {DHIKR_LIST[selectedDhikr].text}
@@ -186,7 +202,7 @@ export const Tasbih: React.FC = () => {
                         </span>
                     </div>
 
-                    <button onClick={() => {setSelectedDhikr(prev => (prev + 1) % DHIKR_LIST.length); handleResetCurrent();}} className="p-2 text-gray-600 hover:text-white transition-colors">
+                    <button onClick={() => { setSelectedDhikr(prev => (prev + 1) % DHIKR_LIST.length); handleResetCurrent(); }} className="p-2 text-gray-600 hover:text-white transition-colors">
                         <ChevronLeft size={24} />
                     </button>
                 </div>
@@ -200,7 +216,7 @@ export const Tasbih: React.FC = () => {
             </div>
 
             {/* --- THE CORE INTERACTIVE HUB --- */}
-            <div 
+            <div
                 className="relative w-full max-w-sm aspect-square flex items-center justify-center"
                 onTouchStart={onTouchStart}
                 onTouchMove={onTouchMove}
@@ -208,41 +224,41 @@ export const Tasbih: React.FC = () => {
             >
                 {/* Visual Aura */}
                 <div className="absolute inset-0 rounded-full blur-[100px] transition-all duration-1000 opacity-30" style={{ backgroundColor: theme.primary }}></div>
-                
+
                 {/* SVG Progress Ring */}
                 <svg className="absolute inset-0 w-full h-full -rotate-90 drop-shadow-2xl">
                     <circle cx="50%" cy="50%" r="44%" fill="none" stroke="rgba(255,255,255,0.02)" strokeWidth="14" />
-                    <circle 
-                        cx="50%" cy="50%" r="44%" 
-                        fill="none" 
-                        stroke={theme.primary} 
-                        strokeWidth="14" 
-                        strokeLinecap="round" 
-                        strokeDasharray="276" 
-                        strokeDashoffset={276 - (276 * progress) / 100} 
+                    <circle
+                        cx="50%" cy="50%" r="44%"
+                        fill="none"
+                        stroke={theme.primary}
+                        strokeWidth="14"
+                        strokeLinecap="round"
+                        strokeDasharray="276"
+                        strokeDashoffset={276 - (276 * progress) / 100}
                         className="transition-all duration-500 ease-out"
                         style={{ filter: `drop-shadow(0 0 15px ${theme.primary})` }}
                     />
                 </svg>
 
                 {/* Main Crystal Button */}
-                <div 
+                <div
                     onClick={handleIncrement}
                     className={`relative w-[78%] h-[78%] rounded-full bg-gradient-to-br ${theme.bg} border-[3px] border-white/10 shadow-[0_50px_100px_-20px_rgba(0,0,0,1),inset_0_4px_20px_rgba(255,255,255,0.1)] flex flex-col items-center justify-center cursor-pointer active:scale-90 transition-all duration-100 group select-none overflow-hidden`}
                 >
                     <div className="absolute inset-0 opacity-[0.04] pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/islamic-art.png')] scale-[2] rotate-12"></div>
-                    
+
                     {isAnimating && <div className="absolute inset-0 bg-white/10 animate-ping"></div>}
 
                     <div className="relative z-10 text-center">
-                        <span 
+                        <span
                             className={`block text-[8rem] md:text-[9.5rem] font-black tabular-nums transition-all duration-300 leading-none
                             ${isAnimating ? 'scale-105 text-white brightness-125' : ''}`}
                             style={{ color: isAnimating ? '#fff' : theme.primary, textShadow: isAnimating ? `0 0 40px ${theme.primary}` : 'none' }}
                         >
                             {count}
                         </span>
-                        
+
                         <div className="mt-2 flex flex-col items-center">
                             {lap > 0 && (
                                 <div className="flex items-center gap-2 bg-emerald-500/10 px-4 py-1.5 rounded-full border border-emerald-500/20 animate-in zoom-in shadow-xl">
@@ -253,7 +269,7 @@ export const Tasbih: React.FC = () => {
                         </div>
                     </div>
                 </div>
-                
+
                 {/* Swipe Helper Text */}
                 <div className="absolute -bottom-6 flex items-center gap-2 text-gray-600 text-[10px] font-bold animate-pulse">
                     <ChevronRight size={12} />
@@ -274,8 +290,8 @@ export const Tasbih: React.FC = () => {
                         </div>
                     </div>
 
-                    <button 
-                        onClick={handleResetCurrent} 
+                    <button
+                        onClick={handleResetCurrent}
                         className="group flex flex-col items-center justify-center gap-2 bg-[#1e293b]/40 hover:bg-orange-500/10 border border-white/5 hover:border-orange-500/30 rounded-[2.5rem] transition-all duration-300 active:scale-95"
                     >
                         <RotateCcw size={28} className="text-gray-500 group-hover:text-orange-400 group-hover:rotate-[-60deg] transition-all duration-500" />
@@ -286,12 +302,12 @@ export const Tasbih: React.FC = () => {
                 {/* Target Selector */}
                 <div className="bg-black/40 p-1.5 rounded-[2rem] border border-white/10 flex gap-2">
                     {TARGETS.map(t => (
-                        <button 
-                            key={t} 
-                            onClick={() => {setTarget(t); handleResetCurrent();}} 
+                        <button
+                            key={t}
+                            onClick={() => { setTarget(t); handleResetCurrent(); }}
                             className={`flex-1 py-3.5 rounded-2xl text-xs font-black transition-all duration-300 flex items-center justify-center gap-1.5
-                                ${target === t 
-                                    ? 'bg-emerald-500 text-[#0f172a] shadow-lg scale-[1.02]' 
+                                ${target === t
+                                    ? 'bg-emerald-500 text-[#0f172a] shadow-lg scale-[1.02]'
                                     : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
                         >
                             {t === 0 ? <Zap size={14} fill="currentColor" /> : t}
@@ -301,7 +317,7 @@ export const Tasbih: React.FC = () => {
                 </div>
 
                 {/* Master Wipeout Button */}
-                <button 
+                <button
                     onClick={handleResetTotal}
                     className="w-full py-4 rounded-[2rem] border border-red-500/10 bg-red-500/5 hover:bg-red-500/15 text-red-500/40 hover:text-red-500 text-[10px] font-black uppercase tracking-[0.2em] transition-all duration-300 flex items-center justify-center gap-2 group/delete"
                 >
@@ -314,7 +330,7 @@ export const Tasbih: React.FC = () => {
             {sessionHistory.length > 0 && (
                 <div className="w-full max-w-sm animate-in fade-in slide-in-from-bottom-6 duration-1000">
                     <div className="flex items-center gap-2 text-gray-600 mb-3 px-4">
-                        <History size={14} /> 
+                        <History size={14} />
                         <span className="text-[10px] font-black uppercase tracking-widest">أحدث الإنجازات</span>
                     </div>
                     <div className="flex gap-3 overflow-x-auto no-scrollbar px-2">

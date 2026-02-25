@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, ChevronLeft, Sun, Moon, Coffee, RotateCcw, CheckCircle2, Copy, Share2, Heart, BookOpen, Star, Sparkles, Filter, Info, ArrowRight, Check, ArrowLeft, Loader2 } from 'lucide-react';
+import { challengeService } from '../services/challengeService';
+import { Session } from '@supabase/supabase-js';
 
 interface AzkarCategory {
     ID: number;
@@ -19,7 +21,11 @@ interface AzkarItem {
     AUDIO?: string;
 }
 
-export const Azkar: React.FC = () => {
+interface AzkarProps {
+    session?: Session | null;
+}
+
+export const Azkar: React.FC<AzkarProps> = ({ session }) => {
     const [categories, setCategories] = useState<AzkarCategory[]>([]);
     const [selectedCategory, setSelectedCategory] = useState<AzkarCategory | null>(null);
     const [azkarContent, setAzkarContent] = useState<AzkarItem[]>([]);
@@ -27,6 +33,7 @@ export const Azkar: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [counts, setCounts] = useState<Record<number, number>>({});
     const [copiedId, setCopiedId] = useState<number | null>(null);
+    const [hasRecordedCompletion, setHasRecordedCompletion] = useState(false);
 
     useEffect(() => {
         fetchCategories();
@@ -35,7 +42,37 @@ export const Azkar: React.FC = () => {
     // Smooth scroll to top when category changes
     useEffect(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
+        setHasRecordedCompletion(false); // Reset for new category
     }, [selectedCategory]);
+
+    // Track completion for challenges
+    useEffect(() => {
+        if (!selectedCategory || !session?.user || azkarContent.length === 0 || hasRecordedCompletion) return;
+
+        const completedItems = azkarContent.filter(item => (counts[item.ID] || 0) >= (item.REPEAT || 1)).length;
+        const isFullyDone = completedItems === azkarContent.length;
+
+        if (isFullyDone) {
+            handleCategoryCompletion();
+        }
+    }, [counts, azkarContent, selectedCategory, session, hasRecordedCompletion]);
+
+    const handleCategoryCompletion = async () => {
+        if (!selectedCategory || !session?.user) return;
+
+        let type: 'morning' | 'evening' | null = null;
+        if (selectedCategory.TITLE.includes('أذكار الصباح')) type = 'morning';
+        else if (selectedCategory.TITLE.includes('أذكار المساء')) type = 'evening';
+
+        if (type) {
+            setHasRecordedCompletion(true);
+            const result = await challengeService.recordAzkarCompletion(session.user.id, type);
+            if (result.success) {
+                // You could show a toast or a special animation here
+                console.log(`Successfully recorded ${type} azkar completion`);
+            }
+        }
+    };
 
     const fetchCategories = async () => {
         try {
@@ -102,9 +139,9 @@ export const Azkar: React.FC = () => {
     if (selectedCategory) {
         return (
             <div className="w-full max-w-2xl mx-auto px-4 py-6 md:py-12 space-y-6 md:space-y-10 overflow-x-hidden">
-                
+
                 {/* Modern Sticky Header */}
-                <motion.div 
+                <motion.div
                     initial={{ opacity: 0, y: -20 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="sticky top-4 z-50"
@@ -147,20 +184,20 @@ export const Azkar: React.FC = () => {
                                 const isDone = currentCount >= repeatGoal;
 
                                 return (
-                                    <motion.div 
+                                    <motion.div
                                         layout
                                         initial={{ opacity: 0, y: 20 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         transition={{ delay: (idx % 10) * 0.05 }}
-                                        key={idx} 
+                                        key={idx}
                                         className={`relative rounded-2xl md:rounded-[3rem] border transition-all duration-500 overflow-hidden group shadow-xl
-                                        ${isDone 
-                                            ? 'bg-emerald-500/10 border-emerald-500/40' 
-                                            : 'glass-panel border-white/5 hover:border-white/20'}`}
+                                        ${isDone
+                                                ? 'bg-emerald-500/10 border-emerald-500/40'
+                                                : 'glass-panel border-white/5 hover:border-white/20'}`}
                                     >
                                         {/* Subtle Progress Bar at Top */}
                                         <div className="absolute top-0 left-0 right-0 h-1.5 bg-black/40">
-                                            <motion.div 
+                                            <motion.div
                                                 initial={{ width: 0 }}
                                                 animate={{ width: `${(currentCount / repeatGoal) * 100}%` }}
                                                 className="h-full bg-gradient-to-r from-emerald-600 to-teal-400 transition-all duration-500"
@@ -185,7 +222,7 @@ export const Azkar: React.FC = () => {
 
                                         {/* Action Bar */}
                                         <div className="bg-black/40 p-4 md:p-8 flex items-center justify-between gap-4 md:gap-8 border-t border-white/5">
-                                            
+
                                             {/* Utility Buttons */}
                                             <div className="flex items-center gap-3">
                                                 <button
@@ -209,12 +246,12 @@ export const Azkar: React.FC = () => {
                                                 onClick={() => handleIncrement(item.ID, repeatGoal)}
                                                 disabled={isDone}
                                                 className={`flex-1 h-12 md:h-20 rounded-xl md:rounded-[2rem] flex items-center justify-center gap-3 transition-all duration-500 active:scale-95 shadow-2xl relative overflow-hidden
-                                                    ${isDone 
-                                                        ? 'bg-emerald-500 text-white cursor-default' 
+                                                    ${isDone
+                                                        ? 'bg-emerald-500 text-white cursor-default'
                                                         : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20'}`}
                                             >
                                                 {isDone ? (
-                                                    <motion.div 
+                                                    <motion.div
                                                         initial={{ scale: 0.8 }}
                                                         animate={{ scale: 1 }}
                                                         className="flex items-center gap-2"
@@ -244,16 +281,16 @@ export const Azkar: React.FC = () => {
     // View: Categories List (Main)
     return (
         <div className="w-full max-w-5xl mx-auto px-4 py-8 md:py-20 space-y-8 md:space-y-20 overflow-x-hidden">
-            
+
             {/* Header - Ultra Premium */}
-            <motion.div 
+            <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
                 className="text-center relative"
             >
                 <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 h-64 bg-emerald-500/10 blur-[100px] rounded-full -z-10 animate-pulse"></div>
-                
+
                 <motion.div
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
@@ -265,7 +302,7 @@ export const Azkar: React.FC = () => {
                 </motion.div>
 
                 <h2 className="text-3xl md:text-8xl font-black leading-tight mb-6 tracking-tighter">
-                    <motion.span 
+                    <motion.span
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.4 }}
@@ -273,7 +310,7 @@ export const Azkar: React.FC = () => {
                     >
                         أذكار المسلم
                     </motion.span>
-                    <motion.span 
+                    <motion.span
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.6 }}
@@ -319,12 +356,12 @@ export const Azkar: React.FC = () => {
                                 className="group relative overflow-hidden glass-panel border border-white/5 hover:border-emerald-500/40 p-6 md:p-12 rounded-[2rem] md:rounded-[3.5rem] transition-all duration-500 active:scale-[0.98] text-right flex items-center gap-6 shadow-xl"
                             >
                                 <div className="absolute top-0 left-0 w-32 h-32 bg-emerald-500/5 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2 group-hover:bg-emerald-500/10 transition-colors"></div>
-                                
+
                                 <div className="w-14 h-14 md:w-24 md:h-24 bg-black/40 rounded-2xl md:rounded-[2rem] flex items-center justify-center text-emerald-500/70 group-hover:text-white group-hover:bg-emerald-500 transition-all duration-500 border border-white/5 shadow-inner">
                                     {category.TITLE.includes('صباح') || category.TITLE.includes('مساء') ? <Sun size={24} className="md:w-10 md:h-10" /> :
-                                     category.TITLE.includes('نوم') ? <Moon size={24} className="md:w-10 md:h-10" /> :
-                                     category.TITLE.includes('صلاة') ? <CheckCircle2 size={24} className="md:w-10 md:h-10" /> :
-                                     <BookOpen size={24} className="md:w-10 md:h-10" />}
+                                        category.TITLE.includes('نوم') ? <Moon size={24} className="md:w-10 md:h-10" /> :
+                                            category.TITLE.includes('صلاة') ? <CheckCircle2 size={24} className="md:w-10 md:h-10" /> :
+                                                <BookOpen size={24} className="md:w-10 md:h-10" />}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <h3 className="text-base md:text-3xl font-black text-white group-hover:text-emerald-400 transition-colors line-clamp-1 leading-tight">
@@ -338,7 +375,7 @@ export const Azkar: React.FC = () => {
                     </AnimatePresence>
 
                     {filteredCategories.length === 0 && (
-                        <motion.div 
+                        <motion.div
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             className="col-span-full py-40 text-center glass-panel rounded-3xl border border-white/5 border-dashed"

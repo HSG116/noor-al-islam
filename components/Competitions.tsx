@@ -115,14 +115,27 @@ export const Competitions: React.FC<{ session: any }> = ({ session }) => {
             className="grid grid-cols-1 md:grid-cols-3 gap-6"
           >
             {challenges.map((c, idx) => (
-              <div key={c.id} className="glass-panel p-8 rounded-[2.5rem] border border-white/10 relative overflow-hidden group hover:border-emerald-500/50 transition-all">
+              <div key={c.id} className="glass-panel p-8 rounded-[2.5rem] border border-white/10 relative overflow-hidden group hover:border-emerald-500/50 transition-all flex flex-col">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 blur-3xl -z-10 group-hover:bg-emerald-500/10 transition-colors"></div>
                 <div className="flex flex-col h-full justify-between gap-6">
                   <div className="space-y-4">
-                    <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-all shadow-inner">
-                      <Calendar size={28} />
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all shadow-inner
+                      ${c.category === 'azkar' ? 'bg-amber-500/10 text-amber-400 group-hover:bg-amber-500' :
+                        c.category === 'tasbeeh' ? 'bg-blue-500/10 text-blue-400 group-hover:bg-blue-500' :
+                          'bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500'} group-hover:text-white`}>
+                      {c.category === 'azkar' ? <Sun size={28} /> :
+                        c.category === 'tasbeeh' ? <Target size={28} /> :
+                          <BookOpen size={28} />}
                     </div>
                     <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border
+                          ${c.category === 'azkar' ? 'border-amber-500/20 text-amber-500 bg-amber-500/5' :
+                            c.category === 'tasbeeh' ? 'border-blue-500/20 text-blue-500 bg-blue-500/5' :
+                              'border-emerald-500/20 text-emerald-500 bg-emerald-500/5'}`}>
+                          {c.category === 'azkar' ? 'تحدي أذكار' : c.category === 'tasbeeh' ? 'تحدي تسبيح' : 'تحدي ختمة'}
+                        </span>
+                      </div>
                       <h3 className="text-xl font-black text-white">{c.title}</h3>
                       <p className="text-xs text-gray-400 font-bold leading-relaxed">{c.description}</p>
                     </div>
@@ -131,10 +144,22 @@ export const Competitions: React.FC<{ session: any }> = ({ session }) => {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between text-xs font-black">
                       <span className="text-gray-500">جائزة الإتمام</span>
-                      <span className="text-emerald-400 flex items-center gap-1"><Zap size={14} /> {c.points_reward} نقطة</span>
+                      <span className="text-emerald-400 flex items-center gap-1"><Zap size={14} fill="currentColor" /> {c.points_reward} نقطة</span>
                     </div>
                     <button
-                      onClick={() => handleJoin(c.id)}
+                      onClick={async () => {
+                        if (!session?.user) return alert('الرجاء تسجيل الدخول للمشاركة!');
+                        setJoiningId(c.id);
+                        const { error } = await challengeService.joinChallenge(session.user.id, c.id);
+                        if (error) alert('فشل الانضمام: ' + error.message);
+                        else {
+                          const msg = c.category === 'azkar' ? 'تم الانضمام بنجاح! توجه للصفحة الرئيسية ثم الأذكار للبدء.' :
+                            c.category === 'tasbeeh' ? 'تم الانضمام بنجاح! توجه لصفحة المسبحة للبدء.' :
+                              'تم الانضمام بنجاح! توجه للمصحف للبدء.';
+                          alert(msg);
+                        }
+                        setJoiningId(null);
+                      }}
                       disabled={joiningId === c.id}
                       className="w-full bg-white text-black py-4 rounded-2xl font-black text-xs hover:bg-emerald-500 hover:text-white transition-all shadow-xl active:scale-95 flex items-center justify-center gap-2"
                     >

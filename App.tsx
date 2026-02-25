@@ -127,13 +127,13 @@ const App = () => {
           />
         );
       case ViewState.PLANNER: return <Planner session={session} onNavigate={openTaskRange} />;
-      case ViewState.AZKAR: return <Azkar />;
+      case ViewState.AZKAR: return <Azkar session={session} />;
       case ViewState.PRAYER_TIMES: return <PrayerTimes />;
       case ViewState.MOSQUES: return <MosqueFinder />;
       case ViewState.QIBLA: return <Qibla />;
       case ViewState.RADIO: return <Radio />;
       case ViewState.REMIX: return <Remix />;
-      case ViewState.TASBIH: return <Tasbih />;
+      case ViewState.TASBIH: return <Tasbih session={session} />;
       case ViewState.HADITH: return <HadithLibrary />;
       case ViewState.FATAWA: return <FatwaLibrary />;
       case ViewState.COMPETITIONS:

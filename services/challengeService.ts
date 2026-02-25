@@ -8,6 +8,7 @@ export interface Challenge {
     days_duration: number;
     total_pages: number;
     points_reward: number;
+    category: 'khatma' | 'azkar' | 'tasbeeh';
 }
 
 export interface UserChallenge {
@@ -29,19 +30,24 @@ export const challengeService = {
 
     // اشتراك المستخدم في تحدي
     async joinChallenge(userId: string, challengeId: string) {
-        // التحقق من وجود تحدي نشط لليوزر (ممنوع أخذ تحدي آخر إذا كان هنالك تحدي فعال)
+        // التحقق من نوع التحدي لتحديد الرسالة المناسبة
+        const { data: challengeInfo } = await supabase.from('challenges').select('category').eq('id', challengeId).single();
+        const categoryLabel = challengeInfo?.category === 'azkar' ? 'أذكار' : challengeInfo?.category === 'tasbeeh' ? 'تسبيح' : 'قرآني';
+
+        // التحقق من وجود تحدي نشط لنفس النوع
         const { data: activeChallenges } = await supabase
             .from('user_challenges')
-            .select('id, challenge_id, status')
+            .select('id, challenge_id, status, challenges(category)')
             .eq('user_id', userId)
             .eq('status', 'active');
 
-        if (activeChallenges && activeChallenges.length > 0) {
-            const currentActive = activeChallenges[0];
-            if (currentActive.challenge_id === challengeId) {
-                return { error: { message: 'أنت مشترك بالفعل في هذا التحدي وهو نشط حالياً!' } };
+        const sameCategoryActive = activeChallenges?.find((ac: any) => ac.challenges?.category === challengeInfo?.category);
+
+        if (sameCategoryActive) {
+            if (sameCategoryActive.challenge_id === challengeId) {
+                return { error: { message: `أنت مشترك بالفعل في هذا التحدي وهو نشط حالياً!` } };
             } else {
-                return { error: { message: 'يوجد لديك تحدي قرآني نشط لم تكمله بعد! يجب عليك إكمال تحديك الحالي قبل البدء بتحدي جديد.' } };
+                return { error: { message: `يوجد لديك تحدي ${categoryLabel} نشط لم تكمله بعد! يجب عليك إكمال تحديك الحالي قبل البدء بتحدي جديد من نفس الفئة.` } };
             }
         }
 
@@ -66,7 +72,7 @@ export const challengeService = {
             resultData = res.data;
             resultError = res.error;
         } else {
-            // إضافة اشتراك جديد تماما وتجنب مشكلة الـ duplicate مع fallback
+            // إضافة اشتراك جديد تماما
             try {
                 const res = await supabase
                     .from('user_challenges')
@@ -81,46 +87,46 @@ export const challengeService = {
         }
 
         if (!resultError) {
-            // تحديث ملف المستخدم بالتحدي الحالي
-            await supabase.from('profiles').update({ current_challenge_id: challengeId }).eq('id', userId);
+            // تحديث ملف المستخدم بالتحدي الحالي (للختمة فقط أو بشكل عام)
+            if (challengeInfo?.category === 'khatma') {
+                await supabase.from('profiles').update({ current_challenge_id: challengeId }).eq('id', userId);
+            }
         }
 
         return { data: resultData, error: resultError };
     },
 
-    // جلب التحدي الحالي للمستخدم
-    async getActiveUserChallenge(userId: string) {
+    // جلب التحديات النشطة للمستخدم حسب الفئة
+    async getActiveChallengesByCategory(userId: string, category: string) {
         const { data } = await supabase
             .from('user_challenges')
             .select('*, challenge_details:challenges(*)')
             .eq('user_id', userId)
-            .eq('status', 'active')
-            .single();
-        return data as UserChallenge | null;
+            .eq('status', 'active');
+
+        return (data || []).filter((uc: any) => uc.challenge_details?.category === category) as UserChallenge[];
     },
 
-    // تسجيل قراءة صفحة مع نظام حماية
+    // تسجيل قراءة صفحة مع نظام حماية (للختمة)
     async recordPageRead(userId: string, pageNumber: number, durationSeconds: number) {
-        // 1. نظام الحماية (تخطي الصفحة في أقل من 2 ثانية يعتبر غش)
         if (durationSeconds < 2) {
             const { data: profile } = await supabase.from('profiles').select('cheat_warnings').eq('id', userId).single();
             const newWarnings = (profile?.cheat_warnings || 0) + 1;
 
             if (newWarnings >= 5) {
-                // Device ban will be enforced locally, but we still record 5 warnings in DB
                 await supabase.from('profiles').update({ cheat_warnings: 5, status: 'banned' }).eq('id', userId);
-                return { error: '🚫 تم حظر حسابك وجهازك بشكل نهائي لتجاوزك عدد التحذيرات المسموح بها في تخطي الصفحات!', warnings: 5, isBanned: true };
+                return { error: '🚫 تم حظر حسابك لتجاوزك عدد التحذيرات المسموح بها!', warnings: 5, isBanned: true };
             }
 
             await supabase.from('profiles').update({ cheat_warnings: newWarnings }).eq('id', userId);
-            return { error: `⚠️ نظام الحماية: يرجى قراءة الصفحة بتأنٍ! لا يمكنك تخطي الصفحة بهذه السرعة.\nتحذير رقم: ${newWarnings}/5`, warnings: newWarnings };
+            return { error: `⚠️ يرجى القراءة بتأنٍ! تحذير رقم: ${newWarnings}/5`, warnings: newWarnings };
         }
 
-        // 2. تحديث التحدي
-        const activeChallenge = await this.getActiveUserChallenge(userId);
+        const activeKhatmas = await this.getActiveChallengesByCategory(userId, 'khatma');
         let pointsAdded = 10;
 
-        if (activeChallenge) {
+        if (activeKhatmas.length > 0) {
+            const activeChallenge = activeKhatmas[0];
             const newPagesCompleted = activeChallenge.pages_completed + 1;
             const isFinished = activeChallenge.challenge_details && newPagesCompleted >= activeChallenge.challenge_details.total_pages;
 
@@ -132,23 +138,108 @@ export const challengeService = {
                 })
                 .eq('id', activeChallenge.id);
 
-            // إذا خلص التحدي، ضيف مكافأة التحدي الكبيرة
             if (isFinished && activeChallenge.challenge_details) {
                 pointsAdded += activeChallenge.challenge_details.points_reward;
             }
         }
 
-        // 3. إضافة نقاط
+        const { data: profile } = await supabase.from('profiles').select('total_points').eq('id', userId).single();
+        await supabase.from('profiles').update({ total_points: (profile?.total_points || 0) + pointsAdded }).eq('id', userId);
+        await supabase.from('reading_logs').insert({ user_id: userId, page_number: pageNumber, read_duration_seconds: durationSeconds });
+
+        return { success: true, pointsAdded };
+    },
+
+    // تسجيل إكمال ورد أذكار (صباح أو مساء)
+    async recordAzkarCompletion(userId: string, type: 'morning' | 'evening') {
+        // حماية من التكرار السريع (مرة واحدة لكل نوع في اليوم)
+        const today = new Date().toISOString().split('T')[0];
+        const { data: existing } = await supabase
+            .from('activity_logs')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('activity_type', 'azkar')
+            .eq('activity_subtype', type)
+            .gte('created_at', today)
+            .limit(1);
+
+        if (existing && existing.length > 0) {
+            return { error: 'لقد سجلت إتمام هذا الذكر اليوم بالفعل!' };
+        }
+
+        await supabase.from('activity_logs').insert({
+            user_id: userId,
+            activity_type: 'azkar',
+            activity_subtype: type,
+            amount: 1
+        });
+
+        const activeAzkarChallenges = await this.getActiveChallengesByCategory(userId, 'azkar');
+        let pointsAdded = 50;
+
+        if (activeAzkarChallenges.length > 0) {
+            // ملاحظة: الأذكار تحسب باليوم، نحتاج للتأكد هل تم إكمال الصباح والمساء معاً؟
+            // للتبسيط، كل إكمال يزيد التقدم 0.5 (بحيث إكمال الاثنين يعطي يوم كامل) 
+            // أو ببساطة نزيد 1 كل مرة والهدف يتضاعف. سنستخدم زيادة 1 والهدف هو عدد مرات الإكمال الإجمالي.
+
+            const activeChallenge = activeAzkarChallenges[0];
+            const newUnitsCompleted = activeChallenge.pages_completed + 1;
+            const isFinished = activeChallenge.challenge_details && newUnitsCompleted >= (activeChallenge.challenge_details.total_pages * 2);
+
+            await supabase.from('user_challenges')
+                .update({
+                    pages_completed: newUnitsCompleted,
+                    status: isFinished ? 'completed' : 'active'
+                })
+                .eq('id', activeChallenge.id);
+
+            if (isFinished && activeChallenge.challenge_details) {
+                pointsAdded += activeChallenge.challenge_details.points_reward;
+            }
+        }
+
         const { data: profile } = await supabase.from('profiles').select('total_points').eq('id', userId).single();
         await supabase.from('profiles').update({ total_points: (profile?.total_points || 0) + pointsAdded }).eq('id', userId);
 
-        // 4. حفظ السجل
-        await supabase.from('reading_logs').insert({ user_id: userId, page_number: pageNumber, read_duration_seconds: durationSeconds });
-
-        return { success: true, pointsAdded: 10 };
+        return { success: true, pointsAdded };
     },
 
-    // لوحة الشرف (Leaderboard)
+    // تسجيل عدد تسبيحات
+    async recordTasbeehCount(userId: string, amount: number) {
+        await supabase.from('activity_logs').insert({
+            user_id: userId,
+            activity_type: 'tasbeeh',
+            amount: amount,
+            metadata: { session_total: amount }
+        });
+
+        const activeTasbeehChallenges = await this.getActiveChallengesByCategory(userId, 'tasbeeh');
+        let pointsAdded = Math.floor(amount / 10); // نقطة لكل 10 تسبيحات
+
+        if (activeTasbeehChallenges.length > 0) {
+            const activeChallenge = activeTasbeehChallenges[0];
+            const newTotalCount = activeChallenge.pages_completed + amount;
+            const isFinished = activeChallenge.challenge_details && newTotalCount >= activeChallenge.challenge_details.total_pages;
+
+            await supabase.from('user_challenges')
+                .update({
+                    pages_completed: newTotalCount,
+                    status: isFinished ? 'completed' : 'active'
+                })
+                .eq('id', activeChallenge.id);
+
+            if (isFinished && activeChallenge.challenge_details) {
+                pointsAdded += activeChallenge.challenge_details.points_reward;
+            }
+        }
+
+        const { data: profile } = await supabase.from('profiles').select('total_points').eq('id', userId).single();
+        await supabase.from('profiles').update({ total_points: (profile?.total_points || 0) + pointsAdded }).eq('id', userId);
+
+        return { success: true, pointsAdded };
+    },
+
+    // لوحة الشرف
     async getLeaderboard() {
         const { data } = await supabase
             .from('profiles')
