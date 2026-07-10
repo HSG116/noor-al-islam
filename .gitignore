@@ -34,3 +34,13 @@ yarn-error.log*
 tmp/
 temp/
 server/generated/
+
+# Large files - never commit
+*.zip
+*.apk
+*.lfs
+.local/
+.replit
+replit.md
+replit.nix
+metadata.json
