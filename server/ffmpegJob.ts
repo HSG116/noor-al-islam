@@ -3,9 +3,9 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { randomUUID } from 'crypto';
-import { getAyahAudio, type AyahAudio } from './quranClient';
+import { getAyahAudio, getAyahTranslation, getSurahMeta, type AyahAudio } from './quranClient';
 import { getOutroPath } from './outros';
-import { getBackgroundKeywords, splitAyahForDisplay } from './aiPicker';
+import { getBackgroundKeywords, splitAyahForDisplay, toEasternArabicNumeral } from './aiPicker';
 import { searchMultipleBackgrounds } from './pexelsClient';
 
 export type JobStatus = 'queued' | 'fetching' | 'rendering' | 'done' | 'error';
@@ -29,6 +29,7 @@ export interface GenerateOptions {
   outroId: string;
   fontSize?: number;
   fontColor?: string; // reserved for future use
+  showTranslation?: boolean;
 }
 
 const jobs = new Map<string, Job>();
@@ -155,59 +156,91 @@ interface Segment {
   start: number; // seconds within full timeline
   end: number;   // seconds within full timeline
   bgQuery: string;
+  surahNameArabic: string;
+  ayahNumber: number; // numberInSurah, shown as the Quranic end-of-ayah ornament
+  isLastPartOfAyah: boolean; // only the final split-part of an ayah carries the ۝ ornament
+  translation?: string;
 }
 
 /** Auto-size the ayah font: shorter text = much bigger, longer text = smaller but never tiny. */
 function computeFontSize(text: string, base: number): number {
   const len = text.length;
   let scale: number;
-  if (len <= 20) scale = 1.45;
-  else if (len <= 40) scale = 1.25;
-  else if (len <= 60) scale = 1.05;
-  else if (len <= 90) scale = 0.9;
-  else scale = 0.78;
+  if (len <= 20) scale = 1.5;
+  else if (len <= 40) scale = 1.3;
+  else if (len <= 60) scale = 1.1;
+  else if (len <= 90) scale = 0.95;
+  else scale = 0.82;
   const size = Math.round(base * scale);
-  return Math.max(60, Math.min(170, size));
+  return Math.max(60, Math.min(180, size));
 }
 
-// Vertical anchor for the ayah text — placed a bit below center (≈66% of
-// the 1920px canvas height) so the top of the frame stays free to showcase
-// the natural background.
-const TEXT_ANCHOR_Y = Math.round(1920 * 0.66);
-// NOTE: The "Elgharib" font files supplied by the user are watermarked demo
-// fonts — they silently replace all Arabic text with a vendor watermark
-// ligature ("تم تركيب الخط بواسطة ...") no matter what string is rendered.
-// Using them would corrupt every ayah on screen, so we fall back to Amiri
-// Quran, a proper full Unicode Arabic typeface already bundled in the app.
+// Vertical anchor for the whole caption block — centered horizontally, and
+// vertically around 55% of the 1920px canvas height (slightly below true
+// center) per the professional Quran-reel layout the user asked for. Every
+// video uses the exact same anchor so the composition stays consistent.
+const TEXT_ANCHOR_Y = Math.round(1920 * 0.55);
+// Max text width: 75% of the 1080px canvas → 135px margin on each side.
+const SIDE_MARGIN = Math.round(1080 * 0.125);
+// NOTE: The "Elgharib" font files supplied by the user (all 3 variants) are
+// watermarked demo fonts — they silently replace ANY Arabic text with a fixed
+// vendor watermark string ("تم تركيب الخط بواسطة ...") no matter what is
+// rendered. Confirmed via direct font rendering test and matching file
+// checksums across "different" uploads. They cannot be used until the user
+// provides the real licensed files. Falling back to Amiri, a proper full
+// Unicode Arabic typeface already bundled in the app.
 const PRIMARY_FONT = 'Amiri';
+const TRANSLATION_FONT = 'Inter';
 
-function buildAssFile(segments: Segment[], workDir: string, baseFontSize: number): string {
+function buildAssFile(segments: Segment[], workDir: string, baseFontSize: number, showTranslation: boolean): string {
   const header = `[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
-WrapStyle: 0
+WrapStyle: 1
 ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Ayah,${PRIMARY_FONT},${baseFontSize},&H00FFFFFF,&H000000FF,&H00101010,&HB0000000,1,0,0,0,100,100,0,0,1,3,1,5,80,80,0,1
-Style: Glow,${PRIMARY_FONT},${baseFontSize},&H00FFFFFF,&H000000FF,&H00FFFFFF,&H00000000,1,0,0,0,100,100,0,0,1,0,0,5,80,80,0,1
+Style: Ayah,${PRIMARY_FONT},${baseFontSize},&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,1,0,0,0,100,100,0,0,1,2.5,1.5,5,${SIDE_MARGIN},${SIDE_MARGIN},0,1
+Style: Glow,${PRIMARY_FONT},${baseFontSize},&H00FFFFFF,&H000000FF,&H00FFFFFF,&H00000000,1,0,0,0,100,100,0,0,1,0,0,5,${SIDE_MARGIN},${SIDE_MARGIN},0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
   const lines: string[] = [];
   for (const s of segments) {
-    const fs_ = computeFontSize(s.text, baseFontSize);
+    const ayahFs = computeFontSize(s.text, baseFontSize);
+    const translationFs = Math.round(ayahFs * 0.6); // ~40% smaller than the ayah text
+    const surahFs = Math.round(ayahFs * 0.42);
+    const gap18Fs = 15; // invisible spacer line tuned to approximate an 18px gap
+    const gap14Fs = 12; // invisible spacer line tuned to approximate a 14px gap
     const startT = formatAssTime(s.start);
     const endT = formatAssTime(s.end);
-    const posTag = `{\\an5\\pos(540,${TEXT_ANCHOR_Y})\\fad(260,120)}`;
-    const escaped = escapeAss(s.text);
-    // Soft glow pass (drawn first / lower layer), heavily blurred, low opacity white.
-    lines.push(`Dialogue: 0,${startT},${endT},Glow,,0,0,0,,${posTag}{\\fs${fs_}\\blur6\\alpha&H55&}${escaped}`);
-    // Crisp main pass (drawn on top), bold with stroke + soft shadow.
-    lines.push(`Dialogue: 1,${startT},${endT},Ayah,,0,0,0,,${posTag}{\\fs${fs_}\\bord3\\shad2\\blur0.6\\b1}${escaped}`);
+    // Fade-in + gentle scale-up (0.98 -> 1.0 over 500ms), then stays fully static — no bounce/rotation/shake.
+    const animTag = `{\\an5\\pos(540,${TEXT_ANCHOR_Y})\\fad(180,120)\\fscx98\\fscy98\\t(0,500,\\fscx100\\fscy100)}`;
+    const escapedAyah = escapeAss(s.text);
+
+    // Quranic end-of-ayah ornament (۝ + Eastern Arabic numeral) appended only
+    // after the final part of a (possibly split) ayah, in a slightly smaller run.
+    const ornament = s.isLastPartOfAyah ? ` {\\fs${Math.round(ayahFs * 0.6)}}۝${toEasternArabicNumeral(s.ayahNumber)}{\\fs${ayahFs}}` : '';
+
+    const surahLine = `${s.surahNameArabic} • الآية ${toEasternArabicNumeral(s.ayahNumber)}`;
+
+    let body = `{\\fs${ayahFs}\\b1}${escapedAyah}${ornament}`;
+    if (showTranslation && s.translation) {
+      body += `\\N{\\fs${gap18Fs}\\alpha&HFF&}.{\\alpha&H00&}`; // invisible spacer ≈18px
+      body += `\\N{\\fs${translationFs}\\fn${TRANSLATION_FONT}\\b0\\c&HE6E6E6&\\alpha&H1A&\\bord1\\shad1}${escapeAss(s.translation)}`;
+      body += `{\\fs${gap14Fs}\\alpha&HFF&}\\N.{\\alpha&H00&}`; // invisible spacer ≈14px
+    } else {
+      body += `\\N{\\fs${gap14Fs}\\alpha&HFF&}.{\\alpha&H00&}`;
+    }
+    body += `\\N{\\fs${surahFs}\\fn${PRIMARY_FONT}\\b0\\c&HDFFFE0&\\bord1.5\\shad1}${escapeAss(surahLine)}`;
+
+    // Soft glow pass (drawn first / lower layer), heavily blurred, very low opacity white — a subtle halo, not a second visible copy.
+    lines.push(`Dialogue: 0,${startT},${endT},Glow,,0,0,0,,${animTag}{\\blur8\\alpha&HB0&}${body}`);
+    // Crisp main pass (drawn on top): pure white fill, black stroke, soft shadow.
+    lines.push(`Dialogue: 1,${startT},${endT},Ayah,,0,0,0,,${animTag}{\\bord2.5\\shad2\\blur0.4}${body}`);
   }
   const assPath = path.join(workDir, 'captions.ass');
   fs.writeFileSync(assPath, header + lines.join('\n') + '\n', 'utf-8');
@@ -215,18 +248,29 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 }
 
 /** Build the per-segment reading timeline, splitting long ayahs into natural, readable chunks. */
-function buildSegments(ayahAudios: AyahAudio[], durations: number[]): Segment[] {
+function buildSegments(
+  ayahAudios: AyahAudio[],
+  durations: number[],
+  surahNameArabic: string,
+  translations: (string | undefined)[],
+): Segment[] {
   const segments: Segment[] = [];
   let cursor = 0;
   for (let i = 0; i < ayahAudios.length; i++) {
     const ayahDuration = durations[i];
     const parts = splitAyahForDisplay(ayahAudios[i].text);
+    const ayahNumber = ayahAudios[i].numberInSurah;
+    const translation = translations[i];
     if (parts.length === 1) {
       segments.push({
         text: parts[0],
         start: cursor,
         end: cursor + ayahDuration,
         bgQuery: getBackgroundKeywords(parts[0]),
+        surahNameArabic,
+        ayahNumber,
+        isLastPartOfAyah: true,
+        translation,
       });
     } else {
       const totalChars = parts.reduce((n, p) => n + p.length, 0);
@@ -239,6 +283,10 @@ function buildSegments(ayahAudios: AyahAudio[], durations: number[]): Segment[] 
           start: partCursor,
           end: partCursor + dur,
           bgQuery: getBackgroundKeywords(parts[j]),
+          surahNameArabic,
+          ayahNumber,
+          isLastPartOfAyah: j === parts.length - 1,
+          translation,
         });
         partCursor += dur;
       }
@@ -366,8 +414,22 @@ export async function runGenerateJob(job: Job, opts: GenerateOptions) {
 
     const totalAudioDuration = durations.reduce((a, b) => a + b, 0);
 
+    // Fetch surah name + English translations (used for the caption block below the ayah)
+    const surahMeta = await getSurahMeta(opts.surahNumber);
+    const showTranslation = opts.showTranslation !== false;
+    let translations: (string | undefined)[] = [];
+    if (showTranslation) {
+      try {
+        translations = await Promise.all(
+          ayahAudios.map((a) => getAyahTranslation(opts.surahNumber, a.numberInSurah)),
+        );
+      } catch { translations = ayahAudios.map(() => undefined); }
+    } else {
+      translations = ayahAudios.map(() => undefined);
+    }
+
     // Split long ayahs into natural, readable segments and build the timeline
-    const segments = buildSegments(ayahAudios, durations);
+    const segments = buildSegments(ayahAudios, durations, surahMeta.name, translations);
 
     // Concat audio (mp3 -> concat demuxer needs a list file; re-encode to be safe)
     job.status = 'rendering';
@@ -415,8 +477,8 @@ export async function runGenerateJob(job: Job, opts: GenerateOptions) {
     job.progress = 58;
     const bgTrack = await buildBackgroundTrack(segments, bgFiles, workDir);
 
-    // Build captions (Elgharib font, auto-sized, positioned below center, glow + stroke)
-    const assPath = buildAssFile(segments, workDir, opts.fontSize || 96);
+    // Build captions: large centered ayah text (~55% height), translation + surah name below, glow + stroke
+    const assPath = buildAssFile(segments, workDir, opts.fontSize || 96, showTranslation);
 
     // Compose: burn captions onto the background track, mux with audio
     job.message = 'تركيب الفيديو والترجمة...';

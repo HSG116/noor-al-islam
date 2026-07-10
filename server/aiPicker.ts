@@ -185,6 +185,13 @@ const KEYWORD_RULES: Array<{ pattern: RegExp; keywords: string }> = [
 
 const DEFAULT_KEYWORDS = 'nature peaceful landscape serene calm cinematic';
 
+const EASTERN_ARABIC_DIGITS = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+
+/** Convert a number to Eastern Arabic-Indic numerals (as used in the Mus'haf). */
+export function toEasternArabicNumeral(n: number): string {
+  return String(n).split('').map((d) => EASTERN_ARABIC_DIGITS[parseInt(d, 10)] ?? d).join('');
+}
+
 /** Return Pexels search keywords based on Arabic ayah content. */
 export function getBackgroundKeywords(arabicText: string): string {
   for (const { pattern, keywords } of KEYWORD_RULES) {

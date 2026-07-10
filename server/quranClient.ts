@@ -70,3 +70,28 @@ export async function getAyahAudio(surahNumber: number, ayahNumber: number, reci
   const data = await getJson<any>(`${BASE}/ayah/${surahNumber}:${ayahNumber}/${reciterEdition}`);
   return { numberInSurah: data.numberInSurah, text: data.text, audioUrl: data.audio };
 }
+
+const surahMetaCache = new Map<number, SurahMeta>();
+
+/** Lightweight surah metadata (Arabic + English name) — cached in-memory since it never changes. */
+export async function getSurahMeta(surahNumber: number): Promise<SurahMeta> {
+  const cached = surahMetaCache.get(surahNumber);
+  if (cached) return cached;
+  const data = await getJson<any>(`${BASE}/surah/${surahNumber}`);
+  const meta: SurahMeta = {
+    number: data.number,
+    name: data.name,
+    englishName: data.englishName,
+    englishNameTranslation: data.englishNameTranslation,
+    numberOfAyahs: data.numberOfAyahs,
+    revelationType: data.revelationType,
+  };
+  surahMetaCache.set(surahNumber, meta);
+  return meta;
+}
+
+/** English translation text for a single ayah (default: Saheeh International). */
+export async function getAyahTranslation(surahNumber: number, ayahNumber: number, edition = 'en.sahih'): Promise<string> {
+  const data = await getJson<any>(`${BASE}/ayah/${surahNumber}:${ayahNumber}/${edition}`);
+  return data.text as string;
+}

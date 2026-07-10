@@ -130,7 +130,7 @@ router.post('/generate', async (req, res) => {
     if (isRateLimited(req.ip || 'unknown')) {
       return res.status(429).json({ error: 'عدد كبير من الطلبات، حاول لاحقاً' });
     }
-    const { surahNumber, startAyah, endAyah, reciterEdition, backgroundVideoUrl, outroId, fontSize } = req.body || {};
+    const { surahNumber, startAyah, endAyah, reciterEdition, backgroundVideoUrl, outroId, fontSize, showTranslation } = req.body || {};
 
     const isPosInt = (v: any) => Number.isInteger(v) && v > 0;
     if (!isPosInt(surahNumber) || surahNumber > 114) return res.status(400).json({ error: 'رقم سورة غير صالح' });
@@ -155,7 +155,7 @@ router.post('/generate', async (req, res) => {
 
     const job = createJob();
     res.json({ jobId: job.id });
-    runGenerateJob(job, { surahNumber, startAyah, endAyah, reciterEdition, backgroundVideoUrl, outroId, fontSize: safeFontSize });
+    runGenerateJob(job, { surahNumber, startAyah, endAyah, reciterEdition, backgroundVideoUrl, outroId, fontSize: safeFontSize, showTranslation: showTranslation !== false });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
