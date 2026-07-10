@@ -162,26 +162,38 @@ interface Segment {
   translation?: string;
 }
 
-/** Auto-size the ayah font: shorter text = much bigger, longer text = smaller but never tiny. */
+// Max text block width: ~65% of the 1080px canvas (per the "60-70%" spec),
+// used to estimate how many lines a given ayah will wrap to at a given size.
+const MAX_TEXT_WIDTH_PX = Math.round(1080 * 0.65);
+// Rough average glyph width for Amiri Arabic (incl. diacritics) as a fraction
+// of font size — used only to *estimate* wrap-line count, not to lay out text.
+const AVG_GLYPH_WIDTH_RATIO = 0.42;
+
+/**
+ * Responsive typography: the ayah font size is derived continuously from how
+ * many lines the ayah is estimated to wrap to at a reference size (which
+ * itself comes from the ayah's character length), instead of a handful of
+ * fixed buckets. One line loses no size, each extra line shaves a consistent
+ * amount off the scale — so a 1-line ayah and a 6-line ayah both look
+ * intentional and proportioned, never "huge" or "tiny".
+ */
 function computeFontSize(text: string, base: number): number {
-  const len = text.length;
-  let scale: number;
-  if (len <= 20) scale = 1.5;
-  else if (len <= 40) scale = 1.3;
-  else if (len <= 60) scale = 1.1;
-  else if (len <= 90) scale = 0.95;
-  else scale = 0.82;
-  const size = Math.round(base * scale);
-  return Math.max(60, Math.min(180, size));
+  const len = Math.max(1, text.length);
+  const charsPerLineAtBase = MAX_TEXT_WIDTH_PX / (base * AVG_GLYPH_WIDTH_RATIO);
+  const estimatedLines = Math.max(1, Math.ceil(len / charsPerLineAtBase));
+  const scale = 1.18 - 0.13 * (estimatedLines - 1);
+  const clampedScale = Math.max(0.55, Math.min(1.05, scale));
+  const size = Math.round(base * clampedScale);
+  return Math.max(52, Math.min(118, size));
 }
 
 // Vertical anchor for the whole caption block — centered horizontally, and
-// vertically around 55% of the 1920px canvas height (slightly below true
-// center) per the professional Quran-reel layout the user asked for. Every
-// video uses the exact same anchor so the composition stays consistent.
-const TEXT_ANCHOR_Y = Math.round(1920 * 0.55);
-// Max text width: 75% of the 1080px canvas → 135px margin on each side.
-const SIDE_MARGIN = Math.round(1080 * 0.125);
+// roughly vertically centered with a slight downward offset (per the updated
+// professional Quran-reel layout). Every video uses the exact same anchor so
+// the composition stays consistent.
+const TEXT_ANCHOR_Y = Math.round(1920 * 0.52);
+// Max text width: ~65% of the 1080px canvas, matching MAX_TEXT_WIDTH_PX.
+const SIDE_MARGIN = Math.round((1080 - MAX_TEXT_WIDTH_PX) / 2);
 // NOTE: The "Elgharib" font files supplied by the user (all 3 variants) are
 // watermarked demo fonts — they silently replace ANY Arabic text with a fixed
 // vendor watermark string ("تم تركيب الخط بواسطة ...") no matter what is
@@ -202,7 +214,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Ayah,${PRIMARY_FONT},${baseFontSize},&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,1,0,0,0,100,100,0,0,1,2.5,1.5,5,${SIDE_MARGIN},${SIDE_MARGIN},0,1
+Style: Ayah,${PRIMARY_FONT},${baseFontSize},&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,1,0,0,0,100,100,0,0,1,2,1,5,${SIDE_MARGIN},${SIDE_MARGIN},0,1
 Style: Glow,${PRIMARY_FONT},${baseFontSize},&H00FFFFFF,&H000000FF,&H00FFFFFF,&H00000000,1,0,0,0,100,100,0,0,1,0,0,5,${SIDE_MARGIN},${SIDE_MARGIN},0,1
 
 [Events]
@@ -211,36 +223,39 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   const lines: string[] = [];
   for (const s of segments) {
     const ayahFs = computeFontSize(s.text, baseFontSize);
-    const translationFs = Math.round(ayahFs * 0.6); // ~40% smaller than the ayah text
-    const surahFs = Math.round(ayahFs * 0.42);
-    const gap18Fs = 15; // invisible spacer line tuned to approximate an 18px gap
-    const gap14Fs = 12; // invisible spacer line tuned to approximate a 14px gap
+    // Translation is 45%-55% of the ayah size per spec — use the midpoint (~50%).
+    const translationFs = Math.round(ayahFs * 0.5);
+    const surahFs = Math.round(ayahFs * 0.34);
+    const gap14Fs = 11; // invisible spacer line tuned to approximate a 14px gap (ayah -> translation)
+    const gap10Fs = 8;  // invisible spacer line tuned to approximate a 10px gap (translation -> surah name)
     const startT = formatAssTime(s.start);
     const endT = formatAssTime(s.end);
     // Fade-in + gentle scale-up (0.98 -> 1.0 over 500ms), then stays fully static — no bounce/rotation/shake.
     const animTag = `{\\an5\\pos(540,${TEXT_ANCHOR_Y})\\fad(180,120)\\fscx98\\fscy98\\t(0,500,\\fscx100\\fscy100)}`;
     const escapedAyah = escapeAss(s.text);
 
-    // Quranic end-of-ayah ornament (۝ + Eastern Arabic numeral) appended only
-    // after the final part of a (possibly split) ayah, in a slightly smaller run.
-    const ornament = s.isLastPartOfAyah ? ` {\\fs${Math.round(ayahFs * 0.6)}}۝${toEasternArabicNumeral(s.ayahNumber)}{\\fs${ayahFs}}` : '';
+    // Quranic end-of-ayah ornament with the ayah number set INSIDE it (۝٣٩,
+    // not ٣٩ ۝), appended immediately after the ayah text with no separating
+    // space so it reads as part of the ayah rather than a separate element.
+    // Sized ~70% of the ayah text per spec.
+    const ornament = s.isLastPartOfAyah ? `{\\fs${Math.round(ayahFs * 0.7)}}۝${toEasternArabicNumeral(s.ayahNumber)}{\\fs${ayahFs}}` : '';
 
     const surahLine = `${s.surahNameArabic} • الآية ${toEasternArabicNumeral(s.ayahNumber)}`;
 
     let body = `{\\fs${ayahFs}\\b1}${escapedAyah}${ornament}`;
     if (showTranslation && s.translation) {
-      body += `\\N{\\fs${gap18Fs}\\alpha&HFF&}.{\\alpha&H00&}`; // invisible spacer ≈18px
-      body += `\\N{\\fs${translationFs}\\fn${TRANSLATION_FONT}\\b0\\c&HE6E6E6&\\alpha&H1A&\\bord1\\shad1}${escapeAss(s.translation)}`;
-      body += `{\\fs${gap14Fs}\\alpha&HFF&}\\N.{\\alpha&H00&}`; // invisible spacer ≈14px
+      body += `\\N{\\fs${gap14Fs}\\alpha&HFF&}.{\\alpha&H00&}`; // invisible spacer ≈14px
+      body += `\\N{\\fs${translationFs}\\fn${TRANSLATION_FONT}\\b0\\c&HE6E6E6&\\alpha&H1A&\\bord0.8\\shad0.6}${escapeAss(s.translation)}`;
+      body += `{\\fs${gap10Fs}\\alpha&HFF&}\\N.{\\alpha&H00&}`; // invisible spacer ≈10px
     } else {
-      body += `\\N{\\fs${gap14Fs}\\alpha&HFF&}.{\\alpha&H00&}`;
+      body += `\\N{\\fs${gap10Fs}\\alpha&HFF&}.{\\alpha&H00&}`;
     }
-    body += `\\N{\\fs${surahFs}\\fn${PRIMARY_FONT}\\b0\\c&HDFFFE0&\\bord1.5\\shad1}${escapeAss(surahLine)}`;
+    body += `\\N{\\fs${surahFs}\\fn${PRIMARY_FONT}\\b0\\c&HDDDDDD&\\bord1\\shad0.6}${escapeAss(surahLine)}`;
 
-    // Soft glow pass (drawn first / lower layer), heavily blurred, very low opacity white — a subtle halo, not a second visible copy.
-    lines.push(`Dialogue: 0,${startT},${endT},Glow,,0,0,0,,${animTag}{\\blur8\\alpha&HB0&}${body}`);
-    // Crisp main pass (drawn on top): pure white fill, black stroke, soft shadow.
-    lines.push(`Dialogue: 1,${startT},${endT},Ayah,,0,0,0,,${animTag}{\\bord2.5\\shad2\\blur0.4}${body}`);
+    // Soft glow pass (drawn first / lower layer), gently blurred, low opacity white — a subtle, understated halo (not a strong effect).
+    lines.push(`Dialogue: 0,${startT},${endT},Glow,,0,0,0,,${animTag}{\\blur5\\alpha&HD8&}${body}`);
+    // Crisp main pass (drawn on top): pure white fill, black stroke, light shadow.
+    lines.push(`Dialogue: 1,${startT},${endT},Ayah,,0,0,0,,${animTag}{\\bord2\\shad1\\blur0.3}${body}`);
   }
   const assPath = path.join(workDir, 'captions.ass');
   fs.writeFileSync(assPath, header + lines.join('\n') + '\n', 'utf-8');
