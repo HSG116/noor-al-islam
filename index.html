@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <!-- Primary Meta Tags -->
+  <title>نور الإسلام | طريقك للجنة</title>
+  <meta name="description"
+    content="موقع نور الإسلام، طريقك نحو الجنة. استمع واقرأ القرآن الكريم، أوقات الصلاة، أذكار، وتطبيقات إسلامية شاملة بتصميم عصري." />
+  <meta name="keywords" content="قرآن, إسلام, نور الإسلام, صلاة, أذكار, تسبيح, رمضان, خطب, دين, أدعية" />
+  <meta name="author" content="نور الإسلام" />
+  <meta name="robots" content="index, follow" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="نور الإسلام | طريقك للجنة" />
+  <meta property="og:description"
+    content="موقع نور الإسلام الإسلامي الشامل. استمع للقرآن الكريم، تابع أوقات الصلاة والأذكار وغيرها من الخدمات الإسلامية." />
+  <meta property="og:image" content="./logo.webp" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="نور الإسلام | طريقك للجنة" />
+  <meta name="twitter:description"
+    content="موقع نور الإسلام الإسلامي الشامل. استمع للقرآن الكريم، تابع أوقات الصلاة والأذكار وغيرها من الخدمات الإسلامية." />
+  <meta name="twitter:image" content="./logo.webp" />
+
+  <!-- Google Site Verification -->
+  <meta name="google-site-verification" content="googlea3e53f5cbcd6f4a4" />
+  <meta name="google-site-verification" content="0bK_qqXjc49-dSMlKqn0R2J8oFqRFXNWMN8xGDTd9tU" />
+
+  <meta name="theme-color" content="#0f172a">
+  <meta name="application-name" content="نور الإسلام">
+  <meta name="language" content="Arabic">
+  <meta name="revisit-after" content="7 days">
+  <link rel="icon" href="./icon.webp" type="image/webp">
+  <link rel="icon" href="./icon.png" type="image/png">
+  <link rel="apple-touch-icon" href="./icon.webp">
+  <link rel="canonical" href="https://noor-al-islam.vercel.app/" />
+  <link rel="manifest" href="./manifest.json">
+  <link rel="alternate" href="https://noor-al-islam.vercel.app/" hreflang="ar" />
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Noto+Kufi+Arabic:wght@100..900&family=Cairo:wght@400;700;900&family=Noto+Naskh+Arabic:wght@400;700&family=Tajawal:wght@400;700;900&family=Reem+Kufi:wght@400;700&family=Scheherazade+New:wght@400;700&family=Lateef:wght@400;700&family=Almarai:wght@400;700;800&family=El+Messiri:wght@400;700&display=swap"
+    rel="stylesheet" media="print" onload="this.media='all'">
+
+  <!-- Structured Data / JSON-LD for Google -->
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "نور الإسلام | طريقك للجنة",
+      "url": "https://noor-al-islam.vercel.app/",
+      "description": "موقع وتطبيق نور الإسلام يقدم لك كل ما تحتاجه في يومك الإسلامي من قرآن كريم، أذكار، مواقيت صلاة، تسبيح والمزيد.",
+      "applicationCategory": "LifestyleApplication",
+      "operatingSystem": "All",
+      "inLanguage": "ar",
+      "creator": {
+        "@type": "Organization",
+        "name": "نور الإسلام"
+      }
+    }
+  </script>
+
+  <script>
+    window.process = { env: { NODE_ENV: 'production' } };
+    window.global = window;
+  </script>
+  <style>
+    body {
+      -webkit-tap-highlight-color: transparent;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    body::-webkit-scrollbar {
+      display: none;
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 10px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(16, 185, 129, 0.4);
+      border-radius: 10px;
+    }
+
+    .custom-scrollbar {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(16, 185, 129, 0.4) rgba(0, 0, 0, 0.2);
+    }
+
+    .glass-panel {
+      backdrop-filter: blur(24px) saturate(180%);
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+    }
+
+    .crystal-glass {
+      backdrop-filter: blur(30px) saturate(200%);
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow:
+        inset 0 0 20px rgba(255, 255, 255, 0.02),
+        0 20px 50px rgba(0, 0, 0, 0.4);
+    }
+
+    .premium-text-gradient {
+      background: linear-gradient(to bottom, #fff 30%, #10b981 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .glow-emerald {
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+    }
+
+    .glow-emerald-lg {
+      box-shadow: 0 0 40px rgba(16, 185, 129, 0.5);
+    }
+
+  </style>
+</head>
+
+<body class="bg-[#020617] text-white selection:bg-emerald-500/30 overflow-x-hidden">
+  <div id="root"></div>
+  <script type="module" src="./index.tsx"></script>
+</body>
+
+</html>

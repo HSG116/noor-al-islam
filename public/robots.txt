@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://noor-al-islam.vercel.app/sitemap.xml

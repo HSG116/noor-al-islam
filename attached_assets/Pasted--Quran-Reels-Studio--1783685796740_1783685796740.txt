@@ -1,0 +1,623 @@
+إنشاء قسم احترافي داخل موقع “نور الإسلام” لتوليد فيديوهات القرآن القصيرة (Quran Reels Studio)
+
+أريد إنشاء قسم متكامل داخل موقع نور الإسلام وليس تطبيق منفصل. القسم يكون احترافي جداً من ناحية التصميم والأداء وسهولة الاستخدام، ويعمل باستخدام:
+
+* React
+* TypeScript
+* Vite
+* Node.js
+* FFmpeg
+* ImageMagick
+* Pexels API
+* Quran API
+* Audio API
+* Tailwind CSS
+* Framer Motion
+* React Query
+* React Router
+* React Hook Form
+
+ويكون الكود منظم وقابل للتطوير بنسبة 100%.
+
+⸻
+
+الفكرة
+
+القسم يسمح للمستخدم بإنشاء فيديوهات قصيرة (Reels / Shorts / TikTok) لآيات القرآن الكريم بجودة احترافية مع خلفيات طبيعية متحركة، وتأثيرات سينمائية، وانتقالات جميلة، وإخراج احترافي.
+
+⸻
+
+تصميم الواجهة
+
+اصنع واجهة حديثة جداً تشبه أدوات الذكاء الاصطناعي الاحترافية.
+
+التصميم يحتوي على:
+
+* Glassmorphism
+* Blur Effects
+* Smooth Animations
+* Framer Motion
+* Cards جميلة
+* Responsive 100%
+* Dark Mode
+* Light Mode
+* Loading جميل
+* Skeleton Loading
+* Progress Bar أثناء إنشاء الفيديو
+* Toast Notifications
+* Preview مباشر
+* Drag & Drop
+* Sidebar احترافي
+* Tabs منظمة
+* Tooltips
+* Icons حديثة
+* صفحة رئيسية للقسم مع شرح ومميزات.
+
+⸻
+
+اختيار السورة
+
+يجلب جميع السور تلقائياً من API.
+
+يعرض:
+
+* اسم السورة بالعربية
+* الاسم بالإنجليزية
+* عدد الآيات
+* مكان النزول
+* رقم السورة
+
+مع إمكانية البحث السريع.
+
+⸻
+
+اختيار القارئ
+
+يجلب قائمة القراء من API.
+
+مع:
+
+* البحث
+* صورة القارئ إن وجدت
+* الاستماع إلى نموذج صوتي
+* المفضلة
+* آخر قارئ تم استخدامه
+
+⸻
+
+اختيار الآيات
+
+يمكن اختيار:
+
+* آية واحدة
+* مجموعة آيات
+* السورة كاملة
+
+مع إمكانية:
+
+* Start Ayah
+* End Ayah
+
+⸻
+
+جلب النصوص
+
+يجلب تلقائياً:
+
+* النص العربي
+* التشكيل
+* رقم الآية
+
+مع دعم تغيير الخطوط.
+
+⸻
+
+التحكم الكامل بالخط
+
+أريد نظام احترافي جداً.
+
+يشمل:
+
+* اختيار أي خط
+* رفع خط مخصص
+* Google Fonts
+* Local Fonts
+
+التحكم في:
+
+* الحجم
+* اللون
+* سماكة الخط
+* الشفافية
+* الحدود Stroke
+* الظل Shadow
+* Glow
+* Blur
+* Letter Spacing
+* Line Height
+* Padding
+* Border Radius
+* Background للنص
+* Gradient للنص
+* لون الخلفية
+* شفافية الخلفية
+* اتجاه النص
+
+⸻
+
+مكان النص
+
+التحكم الكامل بمكان النص:
+
+* أعلى
+* وسط
+* أسفل
+* يمين
+* يسار
+* إحداثيات X
+* إحداثيات Y
+
+مع إمكانية السحب والإفلات مباشرة داخل المعاينة.
+
+⸻
+
+أنيميشن النص
+
+أضف الكثير من الأنيميشن.
+
+مثل:
+
+* Fade
+* Zoom
+* Slide
+* Pop
+* Typewriter
+* Glow
+* Scale
+* Blur In
+* Blur Out
+* Bounce
+* Float
+* Cinematic Reveal
+* Opacity
+* Rotation
+* Wave
+
+مع التحكم في:
+
+* مدة الأنيميشن
+* السرعة
+* التأخير
+* منحنى الحركة (Ease)
+
+⸻
+
+فيديوهات الخلفية
+
+استخدم Pexels API.
+
+مهم جداً:
+
+البحث يتم دائماً باللغة الإنجليزية فقط وليس العربية.
+
+مثلاً:
+
+Forest
+
+Nature
+
+River
+
+Waterfall
+
+Sunset
+
+Ocean
+
+Rain
+
+Clouds
+
+Sky
+
+Birds
+
+Flowers
+
+Mountains
+
+Night Sky
+
+Stars
+
+Green Landscape
+
+Calm Lake
+
+Snow
+
+Autumn
+
+Spring
+
+Desert
+
+Valley
+
+Fog
+
+Peaceful Nature
+
+Earth
+
+Leaves
+
+وأريد أن يبحث عن عدة كلمات مفتاحية في نفس الوقت ويجمع النتائج.
+
+مثلاً:
+
+Forest OR River OR Waterfall OR Mountains OR Sunset
+
+ثم يعرض عشرات الفيديوهات.
+
+ويستطيع المستخدم:
+
+* مشاهدة Preview
+* اختيار الفيديو المناسب
+* البحث مرة أخرى
+* تحميل المزيد
+* تغيير الفيديو بسهولة
+
+⸻
+
+تغيير الخلفية تلقائياً
+
+ميزة احترافية جداً.
+
+بدلاً من استخدام فيديو واحد.
+
+كل آية يتم تغيير الخلفية تلقائياً.
+
+مثلاً:
+
+الآية 1
+
+➡️ فيديو جبال
+
+الآية 2
+
+➡️ نهر
+
+الآية 3
+
+➡️ غابة
+
+الآية 4
+
+➡️ شلال
+
+وهكذا.
+
+مع انتقال سينمائي جميل بين كل فيديو.
+
+⸻
+
+الانتقالات
+
+أضف Transition احترافية.
+
+مثل:
+
+Cross Fade
+
+Fade
+
+Zoom
+
+Blur
+
+Slide
+
+Film Transition
+
+Cinematic Fade
+
+Whip
+
+Flash
+
+Light Leak
+
+⸻
+
+المؤثرات السينمائية
+
+أضف خيارات مثل:
+
+Color Grading
+
+LUT
+
+Bloom
+
+Glow
+
+Sharpen
+
+Vignette
+
+Film Grain
+
+Noise
+
+HDR Look
+
+Soft Light
+
+Contrast
+
+Brightness
+
+Saturation
+
+Temperature
+
+Tint
+
+Motion Blur
+
+Lens Blur
+
+Depth Effect
+
+Particles خفيفة
+
+Dust
+
+Light Rays
+
+Sun Glow
+
+Bokeh
+
+⸻
+
+تحريك الخلفية
+
+إضافة:
+
+Ken Burns
+
+Zoom In
+
+Zoom Out
+
+Slow Pan
+
+Rotate بسيط
+
+Floating Camera
+
+Parallax
+
+⸻
+
+الصوت
+
+جلب صوت الآيات تلقائياً.
+
+التحكم في:
+
+* مستوى الصوت
+* Fade In
+* Fade Out
+* إزالة الصمت
+* Normalize
+* تحسين الجودة
+
+مع إمكانية إضافة:
+
+* صوت أمطار
+* طيور
+* ماء
+* رياح
+
+بشكل اختياري مع التحكم في شدتها، دون أن تؤثر على وضوح التلاوة.
+
+⸻
+
+المعاينة المباشرة
+
+قبل التصدير.
+
+يشاهد المستخدم الفيديو بالكامل.
+
+مع إمكانية تعديل أي شيء مباشرة.
+
+⸻
+
+التصدير
+
+دعم:
+
+1080x1920
+
+720x1280
+
+1440x2560
+
+4K
+
+Square
+
+Landscape
+
+مع:
+
+30 FPS
+
+60 FPS
+
+واختيار الجودة:
+
+Low
+
+Medium
+
+High
+
+Ultra
+
+⸻
+
+FFmpeg
+
+يستخدم FFmpeg لإنشاء الفيديو.
+
+مع دعم:
+
+Hardware Acceleration
+
+Multi Thread
+
+GPU Encoding عند توفرها.
+
+⸻
+
+ImageMagick
+
+يستخدم لإنشاء النصوص العربية بجودة ممتازة.
+
+مع دعم:
+
+RTL
+
+Unicode
+
+Tajawal
+
+Amiri
+
+Cairo
+
+Noto Kufi Arabic
+
+Noto Naskh Arabic
+
+Aref Ruqaa
+
+Reem Kufi
+
+IBM Plex Sans Arabic
+
+وأي خط يرفعه المستخدم.
+
+⸻
+
+APIs
+
+استخدم APIs مجانية.
+
+مثل:
+
+* القرآن الكريم
+* أسماء السور
+* أسماء القراء
+* النصوص العربية
+* عدد الآيات
+* ملفات الصوت
+* Pexels API للفيديوهات
+
+⸻
+
+المجلدات
+
+backend/
+
+frontend/
+
+assets/
+
+fonts/
+
+videos/
+
+outputs/
+
+temp/
+
+cache/
+
+audio/
+
+logs/
+
+config/
+
+⸻
+
+صفحة الإعدادات
+
+إضافة إعدادات مثل:
+
+حفظ آخر الخيارات.
+
+الوضع الداكن.
+
+اختيار اللغة.
+
+مسار FFmpeg.
+
+مسار ImageMagick.
+
+API Keys.
+
+⸻
+
+الأداء
+
+* Lazy Loading
+* Virtualization
+* Code Splitting
+* Image Optimization
+* Video Caching
+* API Cache
+* Debounce Search
+* Infinite Scroll
+* Error Boundaries
+
+⸻
+
+سجل المشاريع
+
+يعرض جميع الفيديوهات التي تم إنشاؤها.
+
+مع:
+
+* إعادة التعديل
+* حذف
+* تنزيل
+* مشاركة
+* نسخ الإعدادات
+* البحث
+* التصفية
+
+⸻
+
+ميزات إضافية احترافية
+
+* إنشاء قوالب (Templates) وحفظها.
+* استيراد وتصدير الإعدادات بصيغة JSON.
+* زر عشوائي لاختيار خلفيات مناسبة.
+* إنشاء عدة فيديوهات دفعة واحدة (Batch Rendering).
+* إنشاء قائمة انتظار (Render Queue).
+* إيقاف واستكمال عملية التصدير.
+* حفظ تلقائي للإعدادات أثناء العمل.
+* اختصارات لوحة المفاتيح.
+* مقارنة قبل/بعد للتعديلات.
+* إحصائيات مثل مدة الفيديو، حجم الملف، ودقة التصدير.
+* دعم تعدد اللغات.
+* دعم السحب والإفلات للفيديوهات والخطوط.
+* نظام إشعارات أثناء اكتمال التصدير.
+* صفحة مساعدة ودليل استخدام.
+* كود نظيف، منظم، موثق، مع أفضل ممارسات React وTypeScript وقابل للتوسعة بسهولة.
