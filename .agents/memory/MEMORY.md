@@ -1,0 +1,1 @@
+- [Watermarked demo fonts](font-watermark-check.md) — always render a test string with a new font file before wiring it into a pipeline; some "free" fonts silently substitute a vendor watermark for all text.

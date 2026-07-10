@@ -35,3 +35,32 @@ export async function searchBackgroundVideos(query: string, perPage = 15, page =
     } as PexelsVideoResult;
   }).filter((v: PexelsVideoResult) => !!v.videoFile);
 }
+
+/**
+ * Fetch one distinct, high-quality background video per query. Used to give
+ * each ayah/segment of a reel its own beautiful, matching background instead
+ * of reusing a single clip for the whole video.
+ */
+export async function searchMultipleBackgrounds(queries: string[]): Promise<PexelsVideoResult[]> {
+  const usedIds = new Set<number>();
+  const results: PexelsVideoResult[] = [];
+
+  for (const query of queries) {
+    try {
+      const videos = await searchBackgroundVideos(query, 10, 1);
+      const fresh = videos.filter((v) => !usedIds.has(v.id));
+      const pool = fresh.length > 0 ? fresh : videos;
+      if (pool.length === 0) {
+        results.push(results[results.length - 1] || null as any);
+        continue;
+      }
+      const pick = pool[Math.floor(Math.random() * Math.min(4, pool.length))];
+      usedIds.add(pick.id);
+      results.push(pick);
+    } catch {
+      results.push(results[results.length - 1] || null as any);
+    }
+  }
+
+  return results.filter(Boolean);
+}
