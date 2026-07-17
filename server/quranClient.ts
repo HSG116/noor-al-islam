@@ -16,6 +16,7 @@ export interface AyahText {
   number: number;
   numberInSurah: number;
   text: string;
+  page: number;
 }
 
 export interface ReciterEdition {
@@ -56,7 +57,7 @@ export async function getSurahAyahs(surahNumber: number, edition = 'quran-uthman
       numberOfAyahs: data.numberOfAyahs,
       revelationType: data.revelationType,
     },
-    ayahs: data.ayahs.map((a: any) => ({ number: a.number, numberInSurah: a.numberInSurah, text: a.text })),
+    ayahs: data.ayahs.map((a: any) => ({ number: a.number, numberInSurah: a.numberInSurah, text: a.text, page: a.page })),
   };
 }
 
@@ -94,4 +95,54 @@ export async function getSurahMeta(surahNumber: number): Promise<SurahMeta> {
 export async function getAyahTranslation(surahNumber: number, ayahNumber: number, edition = 'en.sahih'): Promise<string> {
   const data = await getJson<any>(`${BASE}/ayah/${surahNumber}:${ayahNumber}/${edition}`);
   return data.text as string;
+}
+
+// ─── Quran.com API for QCF2 page-specific font glyphs ────────────────────
+// These fonts are glyph-based: each of the 604 font files contains custom
+// glyphs for exactly one page of the Mushaf. The code_v2 field contains the
+// special Unicode characters that map to those glyphs.
+
+const QURAN_COM_BASE = 'https://api.quran.com/api/v4';
+
+export interface QCFGlyph {
+  verseKey: string;       // e.g. "1:1"
+  codeV2: string;         // special Unicode glyphs for QCF2 font
+  v2Page: number;         // 1-604, maps to QCF2{page}.ttf
+  numberInSurah: number;  // parsed from verseKey
+}
+
+/**
+ * Fetch QCF2 glyph codes for a range of ayahs in a surah.
+ * Uses the Quran.com v4 API which provides code_v2 and v2_page.
+ */
+export async function getAyahCodeV2(
+  surahNumber: number,
+  startAyah: number,
+  endAyah: number,
+): Promise<QCFGlyph[]> {
+  // Build verse_key filter for the range
+  const keys = [];
+  for (let i = startAyah; i <= endAyah; i++) {
+    keys.push(`${surahNumber}:${i}`);
+  }
+
+  // Quran.com API supports fetching by chapter_number and filtering by verse_key
+  const url = `${QURAN_COM_BASE}/quran/verses/code_v2?chapter_number=${surahNumber}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Quran.com API error ${res.status}`);
+  const json: any = await res.json();
+
+  const allVerses: QCFGlyph[] = (json.verses || [])
+    .filter((v: any) => {
+      const num = parseInt(v.verse_key.split(':')[1], 10);
+      return num >= startAyah && num <= endAyah;
+    })
+    .map((v: any) => ({
+      verseKey: v.verse_key,
+      codeV2: v.code_v2,
+      v2Page: v.v2_page,
+      numberInSurah: parseInt(v.verse_key.split(':')[1], 10),
+    }));
+
+  return allVerses;
 }

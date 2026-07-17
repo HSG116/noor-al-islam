@@ -7,8 +7,9 @@ import { searchBackgroundVideos } from './pexelsClient';
 import { listOutros } from './outros';
 import { createJob, runGenerateJob, getJob, GENERATED_DIR, assertAllowedDownloadUrl } from './ffmpegJob';
 import {
-  durationToAyahCount, pickSmartPassage, pickSmartReciter,
+  pickSmartPassage, pickSmartReciter,
   getBackgroundKeywords, FEATURED_RECITERS,
+  calcEndAyah
 } from './aiPicker';
 
 const app = express();
@@ -107,9 +108,18 @@ router.post('/ai-pick', async (req, res) => {
   try {
     const rawDuration = Number(req.body?.durationSeconds);
     const durationSeconds = rawDuration >= 10 && rawDuration <= 300 ? rawDuration : 60;
-    const targetAyahs = durationToAyahCount(durationSeconds);
-    const passage  = pickSmartPassage(targetAyahs);
-    const reciter  = pickSmartReciter();
+    
+    let reciter: any = null;
+    const allReciters = await listReciters();
+    if (req.body?.reciterEdition) {
+      reciter = allReciters.find(r => r.identifier === req.body.reciterEdition);
+    }
+    if (!reciter) {
+      const arReciters = allReciters.filter(r => r.identifier.startsWith('ar.'));
+      reciter = arReciters[Math.floor(Math.random() * arReciters.length)];
+    }
+
+    const passage = await pickSmartPassage(durationSeconds, reciter.identifier);
 
     let background = null;
     try {
@@ -120,6 +130,19 @@ router.post('/ai-pick', async (req, res) => {
     } catch { /* background is optional – client shows error if null */ }
 
     res.json({ passage, reciter, background, durationSeconds });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/calc-end-ayah', async (req, res) => {
+  try {
+    const { surahNumber, startAyah, reciterEdition, durationSeconds } = req.body || {};
+    if (!surahNumber || !startAyah || !reciterEdition || !durationSeconds) {
+      return res.status(400).json({ error: 'Missing parameters' });
+    }
+    const result = await calcEndAyah(surahNumber, startAyah, reciterEdition, durationSeconds);
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -136,7 +159,7 @@ router.post('/generate', async (req, res) => {
     if (!isPosInt(surahNumber) || surahNumber > 114) return res.status(400).json({ error: 'رقم سورة غير صالح' });
     if (!isPosInt(startAyah) || !isPosInt(endAyah) || endAyah < startAyah) return res.status(400).json({ error: 'نطاق آيات غير صالح' });
     if (endAyah - startAyah + 1 > 50) return res.status(400).json({ error: 'الحد الأقصى 50 آية لكل فيديو' });
-    if (typeof reciterEdition !== 'string' || !/^[a-z.]+$/i.test(reciterEdition) || reciterEdition.length > 60) {
+    if (typeof reciterEdition !== 'string' || !/^[a-z0-9._-]+$/i.test(reciterEdition) || reciterEdition.length > 80) {
       return res.status(400).json({ error: 'قارئ غير صالح' });
     }
     if (typeof backgroundVideoUrl !== 'string') return res.status(400).json({ error: 'رابط الخلفية مفقود' });
@@ -164,13 +187,27 @@ router.post('/generate', async (req, res) => {
 router.get('/status/:jobId', (req, res) => {
   const job = getJob(req.params.jobId);
   if (!job) return res.status(404).json({ error: 'job not found' });
-  res.json({ status: job.status, progress: job.progress, message: job.message, error: job.error, ready: job.status === 'done' });
+  res.json({ 
+    status: job.status, 
+    progress: job.progress, 
+    message: job.message, 
+    error: job.error, 
+    outputs: job.outputs,
+    caption: job.caption,
+    ready: job.status === 'done' 
+  });
 });
 
 router.get('/download/:jobId', (req, res) => {
   const job = getJob(req.params.jobId);
-  if (!job || job.status !== 'done' || !job.resultFile) return res.status(404).json({ error: 'not ready' });
-  res.download(job.resultFile, `quran-reel-${job.id}.mp4`);
+  if (!job || job.status !== 'done') return res.status(404).json({ error: 'not ready' });
+  
+  const quality = req.query.q || '1080p';
+  const output = job.outputs?.find(o => o.quality === quality);
+  const fileToDownload = output?.path || job.resultFile;
+  
+  if (!fileToDownload) return res.status(404).json({ error: 'file not found' });
+  res.download(fileToDownload, `quran-reel-${quality}-${job.id}.mp4`);
 });
 
 app.use('/api/reels', router);

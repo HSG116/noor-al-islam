@@ -15,6 +15,8 @@ import { Auth } from './components/Auth';
 import Profile from './components/Profile';
 import { LegalPages } from './components/LegalPages';
 import { applySEO } from './services/seoConfig';
+import { ReelsJobProvider } from './components/ReelsJobContext';
+import { ReelsGlobalProgress } from './components/ReelsGlobalProgress';
 
 const VIEW_PATH: Record<ViewState, string> = {
   [ViewState.HOME]: '/',
@@ -334,7 +336,7 @@ const App = () => {
                 <ToolCard onClick={() => setView(ViewState.REMIX)} icon={<Disc size={18} />} label="واحة الإبداع" color="purple" />
                 <ToolCard onClick={() => setView(ViewState.MOSQUES)} icon={<MapPin size={18} />} label="المساجد" color="indigo" />
                 <ToolCard onClick={() => setView(ViewState.COMPETITIONS)} icon={<Trophy size={18} />} label="المسابقات" color="orange" />
-                <ToolCard onClick={() => setView(ViewState.ARAFAH_DAY)} icon={<Sun size={18} />} label="يوم عرفة" color="amber" />
+
                 <ToolCard onClick={() => setView(ViewState.REELS_STUDIO)} icon={<Layers size={18} />} label="استوديو الريلز" color="emerald" />
               </div>
             </div>
@@ -431,30 +433,33 @@ const App = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#020617] text-white relative flex flex-col overflow-x-hidden selection:bg-emerald-500/30 font-sans">
-      <Stars />
-      <div className="relative z-10 flex flex-col flex-1">
-        {view !== ViewState.QURAN_READ && <Navbar currentView={view} setView={setView} />}
-        <main className={`flex-1 container mx-auto px-0 md:px-4 ${view === ViewState.HOME ? 'pb-0' : 'pb-10 pt-6 md:pt-28'}`}>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={view}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.4, ease: "easeOut" }}
-              className="w-full flex-1 flex flex-col"
-            >
-              <Suspense fallback={<div className="flex items-center justify-center py-20"><Loader2 className="animate-spin text-emerald-500" size={48} /></div>}>
-                {renderContent()}
-              </Suspense>
-            </motion.div>
-          </AnimatePresence>
-        </main>
-        {view !== ViewState.QURAN_READ && <AiChat userId={session?.user?.id} email={session?.user?.email} userName={profile?.name || session?.user?.user_metadata?.full_name} />}
-        {view !== ViewState.QURAN_READ && <Footer onNavigate={setView} />}
+    <ReelsJobProvider>
+      <div className="min-h-screen bg-[#020617] text-white relative flex flex-col overflow-x-hidden selection:bg-emerald-500/30 font-sans">
+        <ReelsGlobalProgress onNavigateToStudio={() => setView(ViewState.REELS_STUDIO)} isOnStudio={view === ViewState.REELS_STUDIO} />
+        <Stars />
+        <div className="relative z-10 flex flex-col flex-1">
+          {view !== ViewState.QURAN_READ && <Navbar currentView={view} setView={setView} />}
+          <main className={`flex-1 container mx-auto px-0 md:px-4 ${view === ViewState.HOME ? 'pb-0' : 'pb-10 pt-6 md:pt-28'}`}>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={view}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.4, ease: "easeOut" }}
+                className="w-full flex-1 flex flex-col"
+              >
+                <Suspense fallback={<div className="flex items-center justify-center py-20"><Loader2 className="animate-spin text-emerald-500" size={48} /></div>}>
+                  {renderContent()}
+                </Suspense>
+              </motion.div>
+            </AnimatePresence>
+          </main>
+          {view !== ViewState.QURAN_READ && <AiChat userId={session?.user?.id} email={session?.user?.email} userName={profile?.name || session?.user?.user_metadata?.full_name} />}
+          {view !== ViewState.QURAN_READ && <Footer onNavigate={setView} />}
+        </div>
       </div>
-    </div>
+    </ReelsJobProvider>
   );
 };
 

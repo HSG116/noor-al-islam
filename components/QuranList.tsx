@@ -783,16 +783,17 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
                     onDoubleClick={() => handleAyahDoubleClick(ayah.surah.number, ayah.numberInSurah, ayah.surah.name, cleanedText)}
                 >
                     {cleanedText} 
-                    <span className="inline-flex items-center mx-1 align-middle">
-                        {isBookmarked && <BookmarkCheck size={Math.max(8, fontSize * 0.35)} className="text-amber-400 ml-0.5" />}
+                    <span className="inline-flex items-center mx-1 align-middle text-emerald-500/80 hover:text-emerald-400 select-none relative justify-center" style={{ width: `${fontSize * 1.8}px`, height: `${fontSize * 1.8}px` }}>
+                        {isBookmarked && <BookmarkCheck size={Math.max(8, fontSize * 0.35)} className="text-amber-400 absolute -top-1 -right-1 z-10" />}
                         <span 
-                            className="inline-flex items-center justify-center rounded-full border border-emerald-500/20 text-emerald-500 font-sans bg-emerald-500/5 select-none"
+                            className="font-quran absolute inset-0 flex items-center justify-center"
                             style={{ 
-                                width: `${fontSize * 1.3}px`, 
-                                height: `${fontSize * 1.3}px`,
-                                fontSize: `${fontSize * 0.5}px` 
+                                fontSize: `${fontSize * 1.5}px`
                             }}
                         >
+                            ۝
+                        </span>
+                        <span className="absolute font-sans font-bold text-emerald-500 flex items-center justify-center" style={{ fontSize: `${fontSize * 0.45}px`, marginTop: '2%' }}>
                             {ayah.numberInSurah}
                         </span>
                     </span>
@@ -907,7 +908,7 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
       {loading ? (
         <div className="flex justify-center py-40"><Loader2 className="animate-spin text-emerald-500" size={48} /></div>
       ) : (
-        <div className="bg-[#1e293b]/50 border border-white/5 rounded-[2.5rem] p-5 md:p-10 min-h-[80vh] shadow-2xl relative overflow-hidden mb-8">
+        <div className="bg-[#1e293b]/50 border border-white/5 rounded-[2.5rem] p-5 md:p-10 min-h-[50vh] shadow-2xl relative overflow-hidden mb-8">
             {/* Inner Header */}
             <div className="flex items-center justify-between mb-4 md:mb-8 pb-3 md:pb-4 border-b border-white/5">
                 <div className="flex items-center gap-2 md:gap-4">
@@ -945,7 +946,7 @@ export const QuranReader: React.FC<QuranReaderProps> = ({ initialPage, onBack, s
                 dir="rtl" 
                 style={{ 
                     fontSize: `${fontSize}px`,
-                    lineHeight: fontSize < 20 ? '2.8' : '3.5'
+                    lineHeight: fontSize < 20 ? '2.2' : '2.4'
                 }}
             >
                 {renderPageContent()}

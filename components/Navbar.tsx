@@ -29,7 +29,6 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView }) => {
     { id: ViewState.MOSQUES, label: 'المساجد', desc: 'ابحث عن أقرب بيت لله', icon: <MapPin size={24} />, color: 'text-teal-400' },
     { id: ViewState.REMIX, label: 'واحة الإبداع', desc: 'بطاقات تهنئة وتصاميم إبداعية', icon: <Sparkles size={24} />, color: 'text-rose-400' },
     { id: ViewState.COMPETITIONS, label: 'مسابقات', desc: 'شارك واربح جوائز قيمة في مسابقاتنا', icon: <Trophy size={24} />, color: 'text-yellow-400' },
-    { id: ViewState.ARAFAH_DAY, label: 'يوم عرفة', desc: 'فضل وأعمال وأدعية يوم عرفة المبارك', icon: <Sun size={24} />, color: 'text-amber-400' },
     { id: ViewState.REELS_STUDIO, label: 'استوديو الريلز', desc: 'أنشئ فيديوهات قرآنية قصيرة احترافية', icon: <Layers size={24} />, color: 'text-emerald-400' }
   ];
 

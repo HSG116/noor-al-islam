@@ -4,8 +4,10 @@ import {
   ArrowRight, Search, Play, Loader2, Film, Music4,
   Download, RefreshCw, CheckCircle2, AlertTriangle, Sparkles,
   Clapperboard, Clock, Wand2, Zap, Bot, ChevronDown, Star,
-  RotateCcw, Timer,
+  RotateCcw, Timer, Copy, Compass
 } from 'lucide-react';
+
+import { useReelsJob } from './ReelsJobContext';
 
 interface ReelsStudioProps { onBack: () => void; }
 
@@ -19,14 +21,14 @@ interface BackgroundVideo { id: number; image: string; duration: number; videoFi
 interface OutroOption { id: string; label: string; }
 
 type Step = 1 | 2 | 3 | 4 | 5;
-type AutoPhase = 'idle' | 'picking' | 'preview' | 'generating' | 'done' | 'error';
+type AutoPhase = 'idle' | 'config' | 'picking' | 'preview' | 'generating' | 'done' | 'error';
 
 const DURATION_OPTIONS: Array<{ label: string; seconds: number; icon: string; desc: string }> = [
-  { label: '٣٠ ث', seconds: 30,  icon: '⚡', desc: '~٥ آيات' },
-  { label: '١ د',  seconds: 60,  icon: '⏱', desc: '~١٠ آيات' },
-  { label: '١:٣٠', seconds: 90,  icon: '✨', desc: '~١٥ آية' },
-  { label: '٢ د',  seconds: 120, icon: '🎬', desc: '~٢٠ آية' },
-  { label: '٢:٣٠', seconds: 150, icon: '🌟', desc: '~٢٥ آية' },
+  { label: '٣٠ ث', seconds: 30,  icon: '⚡', desc: '٣٠–٣٥ ث' },
+  { label: '٤٥ ث', seconds: 45,  icon: '⏱',  desc: '٤٥–٥٠ ث' },
+  { label: '١ د',   seconds: 60,  icon: '✨', desc: '٦٠–٦٥ ث' },
+  { label: '١:٣٠', seconds: 90,  icon: '🎬', desc: '٩٠–٩٥ ث' },
+  { label: '٢ د',   seconds: 120, icon: '🌟', desc: '١٢٠–١٢٥ ث' },
 ];
 
 const AUTO_MESSAGES = [
@@ -44,6 +46,10 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
   const [autoMsgIdx, setAutoMsgIdx]   = useState(0);
   const [autoPickResult, setAutoPickResult] = useState<any>(null);
   const [autoError, setAutoError]     = useState<string | null>(null);
+  const [aiDuration, setAiDuration]   = useState(60);
+  const [aiReciter, setAiReciter]     = useState('auto');
+  const [jobStartTime, setJobStartTime] = useState<number | null>(null);
+  const [elapsedTime, setElapsedTime] = useState(0);
 
   // ── Manual mode ──────────────────────────────────────────────────────────
   const [step, setStep]               = useState<Step>(1);
@@ -60,6 +66,7 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
   const [startAyah, setStartAyah]     = useState(1);
   const [endAyah, setEndAyah]         = useState(10);
   const [showManualRange, setShowManualRange] = useState(false);
+  const [calcEndAyahLoading, setCalcEndAyahLoading] = useState(false);
 
   // Step 3 – reciter
   const [reciters, setReciters]       = useState<ReciterEdition[]>([]);
@@ -84,10 +91,15 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
   const [selectedOutro, setSelectedOutro] = useState<string | null>(null);
 
   // Step 5 – generation
-  const [jobId, setJobId]             = useState<string | null>(null);
-  const [jobStatus, setJobStatus]     = useState<{ status: string; progress: number; message: string; error?: string } | null>(null);
-  const [resultUrl, setResultUrl]     = useState<string | null>(null);
-  const [genError, setGenError]       = useState<string | null>(null);
+  const { jobId, jobStatus, resultUrl, genError, setJobId, clearJob } = useReelsJob();
+
+  // Restore view if coming back with an active job
+  useEffect(() => {
+    if (jobId || genError || resultUrl) {
+      setStep(5);
+      setAutoPhase('idle');
+    }
+  }, []);
 
   // ── Boot fetches ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -113,10 +125,44 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
   // ── Auto duration → ayah range sync ──────────────────────────────────────
   useEffect(() => {
     if (!selectedSurah || showManualRange) return;
-    const count = Math.round(selectedDuration / 6);
-    const end   = Math.min(startAyah + count - 1, selectedSurah.numberOfAyahs);
-    setEndAyah(end);
-  }, [selectedDuration, startAyah, selectedSurah, showManualRange]);
+
+    let active = true;
+    setCalcEndAyahLoading(true);
+
+    const fallbackReciter = selectedReciter?.identifier || (featuredReciters.length > 0 ? featuredReciters[0].identifier : 'ar.alafasy');
+
+    fetch('/api/reels/calc-end-ayah', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        surahNumber: selectedSurah.number,
+        startAyah,
+        reciterEdition: fallbackReciter,
+        durationSeconds: selectedDuration
+      })
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (!active) return;
+        if (d.endAyah) {
+          setEndAyah(Math.min(d.endAyah, selectedSurah.numberOfAyahs));
+        } else {
+          // Fallback if network fails
+          const count = Math.round(selectedDuration / 6);
+          setEndAyah(Math.min(startAyah + count - 1, selectedSurah.numberOfAyahs));
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        const count = Math.round(selectedDuration / 6);
+        setEndAyah(Math.min(startAyah + count - 1, selectedSurah.numberOfAyahs));
+      })
+      .finally(() => {
+        if (active) setCalcEndAyahLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [selectedDuration, startAyah, selectedSurah, showManualRange, selectedReciter, featuredReciters]);
 
   // ── Smart background when entering step 4 ────────────────────────────────
   useEffect(() => {
@@ -126,19 +172,7 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, bgTab]);
 
-  // ── Job poll ──────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!jobId) return;
-    const iv = setInterval(async () => {
-      try {
-        const d = await fetch(`/api/reels/status/${jobId}`).then(r => r.json());
-        setJobStatus(d);
-        if (d.status === 'done')  { clearInterval(iv); setResultUrl(`/reels-media/${jobId}.mp4`); }
-        if (d.status === 'error') { clearInterval(iv); setGenError(d.error || 'حدث خطأ'); }
-      } catch { /* transient */ }
-    }, 1500);
-    return () => clearInterval(iv);
-  }, [jobId]);
+
 
   // Auto-mode message cycling
   useEffect(() => {
@@ -206,8 +240,7 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
       backgroundVideoUrl: (bgTab === 'smart' ? smartBgResult?.videoFile : selectedBg?.videoFile) || '',
       outroId: selectedOutro!,
     };
-    setGenError(null); setResultUrl(null);
-    setJobStatus({ status: 'queued', progress: 0, message: 'جارِ الإرسال...' });
+    clearJob();
     try {
       const d = await fetch('/api/reels/generate', {
         method: 'POST',
@@ -216,7 +249,7 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
       }).then(r => r.json());
       if (d.error) throw new Error(d.error);
       setJobId(d.jobId);
-    } catch (e: any) { setGenError(e.message || 'حدث خطأ غير متوقع'); }
+    } catch (e: any) { alert(e.message || 'حدث خطأ غير متوقع'); }
   };
 
   // ── Full Auto mode ────────────────────────────────────────────────────────
@@ -226,30 +259,30 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
     setAutoPickResult(null);
     setAutoMsgIdx(0);
     try {
-      const durationSeconds = [45, 60, 75, 90][Math.floor(Math.random() * 4)];
       const d = await fetch('/api/reels/ai-pick', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ durationSeconds }),
+        body: JSON.stringify({ durationSeconds: aiDuration, reciterEdition: aiReciter === 'auto' ? undefined : aiReciter }),
       }).then(r => r.json());
       if (d.error) throw new Error(d.error);
       if (!d.background) throw new Error('PEXELS_API_KEY غير مُضاف — لا يمكن اختيار خلفية تلقائياً');
       setAutoPickResult(d);
       setAutoPhase('preview');
     } catch (e: any) {
-      setAutoError(e.message || 'حدث خطأ');
-      setAutoPhase('error');
+      alert(e.message || 'حدث خطأ');
+      setAutoPhase('idle');
     }
-  }, []);
+  }, [aiDuration, aiReciter]);
 
   const confirmAutoGenerate = async () => {
     if (!autoPickResult) return;
     const outros_ = outros.length ? outros : await fetch('/api/reels/outros').then(r => r.json()).catch(() => []);
     const outroId = outros_[0]?.id;
-    if (!outroId) { setAutoError('لا توجد خاتمة متاحة'); setAutoPhase('error'); return; }
+    if (!outroId) { alert('لا توجد خاتمة متاحة'); return; }
 
-    setAutoPhase('generating');
-    setJobId(null); setJobStatus(null); setResultUrl(null); setGenError(null);
+    setAutoPhase('idle');
+    setStep(5);
+    clearJob();
 
     try {
       const d = await fetch('/api/reels/generate', {
@@ -266,14 +299,8 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
       }).then(r => r.json());
       if (d.error) throw new Error(d.error);
       setJobId(d.jobId);
-    } catch (e: any) { setAutoError(e.message || 'فشل إنشاء الفيديو'); setAutoPhase('error'); }
+    } catch (e: any) { alert(e.message || 'فشل إنشاء الفيديو'); }
   };
-
-  // Watch jobId for auto mode completion
-  useEffect(() => {
-    if (autoPhase === 'generating' && jobStatus?.status === 'done') setAutoPhase('done');
-  }, [autoPhase, jobStatus]);
-
   // ── Derived ───────────────────────────────────────────────────────────────
   const filteredSurahs = useMemo(() => {
     const q = surahSearch.trim();
@@ -299,6 +326,8 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
   };
 
   // ════════════════════════════════════════════════════════════════════════════
+  const hasActiveJob = !!(jobId || resultUrl || genError);
+
   return (
     <div className="w-full max-w-3xl mx-auto px-3 md:px-6 py-4 md:py-10 relative z-10">
 
@@ -318,7 +347,7 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
 
       {/* ═══ AUTO MODE CARD ═══════════════════════════════════════════════════ */}
       <AnimatePresence mode="wait">
-        {autoPhase === 'idle' && (
+        {autoPhase === 'idle' && !hasActiveJob && (
           <motion.div key="auto-idle"
             initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
             className="relative mb-6 overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-950/60 via-teal-950/40 to-emerald-950/60 backdrop-blur-xl p-5 md:p-6"
@@ -334,11 +363,69 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
               </div>
               <motion.button
                 whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
-                onClick={runAutoMode}
+                onClick={() => setAutoPhase('config')}
                 className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-black rounded-xl shadow-lg shadow-emerald-900/40 whitespace-nowrap text-sm md:text-base"
               >
-                <Zap size={18} /> إنشاء ريلز تلقائي
+                <Zap size={18} /> بدء الذكاء الاصطناعي
               </motion.button>
+            </div>
+          </motion.div>
+        )}
+
+        {autoPhase === 'config' && !hasActiveJob && (
+          <motion.div key="auto-config"
+            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="mb-6 rounded-2xl border border-emerald-500/30 bg-white/[0.03] backdrop-blur-xl p-6"
+          >
+            <div className="flex items-center gap-2 text-emerald-400 font-black mb-6">
+              <Bot size={20} /> تفضيلات الذكاء الاصطناعي
+            </div>
+
+            <div className="mb-6">
+              <p className="text-white/60 text-sm font-bold mb-3">مدة الريلز التقريبية</p>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                {DURATION_OPTIONS.map(d => (
+                  <button key={d.seconds} onClick={() => setAiDuration(d.seconds)}
+                    className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all ${
+                      aiDuration === d.seconds 
+                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-[0_0_15px_rgba(52,211,153,0.15)]' 
+                      : 'bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    <span className="text-xl mb-1">{d.icon}</span>
+                    <span className="font-bold text-sm">{d.label}</span>
+                    <span className="text-[10px] opacity-50">{d.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-8">
+              <p className="text-white/60 text-sm font-bold mb-3">القارئ</p>
+              <select
+                value={aiReciter}
+                onChange={(e) => setAiReciter(e.target.value)}
+                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 appearance-none cursor-pointer"
+                style={{ direction: 'rtl' }}
+              >
+                <option value="auto">✨ اختيار تلقائي (الذكاء الاصطناعي يقرر)</option>
+                {reciters.filter(r => r.identifier.startsWith('ar.')).map(r => (
+                  <option key={r.identifier} value={r.identifier}>{r.name} - {r.englishName}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setAutoPhase('idle')}
+                className="px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl font-bold text-sm transition-colors"
+              >
+                إلغاء
+              </button>
+              <button onClick={runAutoMode}
+                className="flex-1 flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl font-black text-sm shadow-lg shadow-emerald-900/30"
+              >
+                <Sparkles size={18} /> متابعة
+              </button>
             </div>
           </motion.div>
         )}
@@ -429,70 +516,12 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
           </motion.div>
         )}
 
-        {(autoPhase === 'generating' || autoPhase === 'done') && (
-          <motion.div key="auto-gen"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="mb-6 rounded-2xl border border-emerald-500/30 bg-white/[0.03] backdrop-blur-xl p-5"
-          >
-            <div className="flex items-center gap-2 text-emerald-400 font-black mb-4">
-              <Bot size={18} /> الذكاء الاصطناعي يُنشئ ريلزك...
-            </div>
-            {autoPhase === 'generating' && jobStatus && jobStatus.status !== 'done' && !genError && (
-              <div>
-                <div className="flex items-center gap-3 mb-3">
-                  <Loader2 className="animate-spin text-emerald-400 shrink-0" size={20} />
-                  <p className="text-white/70 text-sm">{jobStatus.message}</p>
-                </div>
-                <div className="h-2.5 bg-white/10 rounded-full overflow-hidden">
-                  <motion.div className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full"
-                    animate={{ width: `${jobStatus.progress}%` }} transition={{ duration: 0.5 }} />
-                </div>
-                <p className="text-white/30 text-xs mt-1 text-left">{jobStatus.progress}%</p>
-              </div>
-            )}
-            {genError && (
-              <div className="text-rose-400 text-sm flex items-center gap-2">
-                <AlertTriangle size={16} /> {genError}
-                <button onClick={() => { setAutoPhase('idle'); setJobId(null); setJobStatus(null); setGenError(null); }} className="ml-2 text-white/50 hover:text-white text-xs underline">
-                  إعادة المحاولة
-                </button>
-              </div>
-            )}
-            {resultUrl && autoPhase === 'done' && (
-              <div className="max-w-xs mx-auto text-center">
-                <video src={resultUrl} controls className="w-full rounded-xl border border-white/10 aspect-[9/16] bg-black mb-4" />
-                <div className="flex gap-2 justify-center">
-                  <a href={resultUrl} download className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black text-sm">
-                    <Download size={15} /> تنزيل
-                  </a>
-                  <button onClick={() => { setAutoPhase('idle'); setJobId(null); setJobStatus(null); setResultUrl(null); }}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/15 text-white rounded-xl font-bold text-sm">
-                    <RotateCcw size={14} /> ريلز جديد
-                  </button>
-                </div>
-              </div>
-            )}
-          </motion.div>
-        )}
 
-        {autoPhase === 'error' && (
-          <motion.div key="auto-error"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="mb-6 rounded-2xl border border-rose-500/30 bg-rose-950/20 p-4 flex items-start gap-3"
-          >
-            <AlertTriangle size={18} className="text-rose-400 shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-rose-300 font-bold text-sm">{autoError}</p>
-              <button onClick={() => setAutoPhase('idle')} className="text-white/50 hover:text-white text-xs mt-1 underline">
-                العودة
-              </button>
-            </div>
-          </motion.div>
-        )}
+
       </AnimatePresence>
 
       {/* ─ OR divider ─ */}
-      {autoPhase === 'idle' && (
+      {autoPhase === 'idle' && !hasActiveJob && (
         <div className="flex items-center gap-3 mb-6">
           <div className="h-px flex-1 bg-white/10" />
           <span className="text-white/30 text-xs font-bold px-2">أو اختر يدوياً</span>
@@ -504,24 +533,26 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
       {autoPhase === 'idle' && (
         <>
           {/* Stepper */}
-          <div className="flex items-center gap-1 mb-5 overflow-x-auto pb-1 no-scrollbar">
-            {([1, 2, 3, 4, 5] as Step[]).map((s, i) => (
-              <React.Fragment key={s}>
-                <button
-                  onClick={() => step > s && setStep(s)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black whitespace-nowrap transition-all ${
-                    step === s  ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-900/40' :
-                    step > s    ? 'bg-emerald-500/20 text-emerald-300 cursor-pointer hover:bg-emerald-500/30' :
-                    'bg-white/5 text-white/30'
-                  }`}
-                >
-                  {step > s ? <CheckCircle2 size={11} /> : <span>{s}</span>}
-                  <span>{STEP_LABELS[s]}</span>
-                </button>
-                {i < 4 && <div className={`h-px flex-1 min-w-[8px] transition-colors ${step > s ? 'bg-emerald-500/40' : 'bg-white/10'}`} />}
-              </React.Fragment>
-            ))}
-          </div>
+          {!hasActiveJob && (
+            <div className="flex items-center gap-1 mb-5 overflow-x-auto pb-1 no-scrollbar">
+              {([1, 2, 3, 4, 5] as Step[]).map((s, i) => (
+                <React.Fragment key={s}>
+                  <button
+                    onClick={() => step > s && setStep(s)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black whitespace-nowrap transition-all ${
+                      step === s  ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-900/40' :
+                      step > s    ? 'bg-emerald-500/20 text-emerald-300 cursor-pointer hover:bg-emerald-500/30' :
+                      'bg-white/5 text-white/30'
+                    }`}
+                  >
+                    {step > s ? <CheckCircle2 size={11} /> : <span>{s}</span>}
+                    <span>{STEP_LABELS[s]}</span>
+                  </button>
+                  {i < 4 && <div className={`h-px flex-1 min-w-[8px] transition-colors ${step > s ? 'bg-emerald-500/40' : 'bg-white/10'}`} />}
+                </React.Fragment>
+              ))}
+            </div>
+          )}
 
           {/* Step content */}
           <div className="bg-white/[0.03] border border-white/10 rounded-2xl backdrop-blur-xl p-4 md:p-6 min-h-[440px]">
@@ -594,7 +625,10 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
                   {/* Ayah range preview */}
                   <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-4 flex items-center gap-4">
                     <div className="flex-1">
-                      <p className="text-white/50 text-xs mb-0.5">نطاق الآيات المقترح</p>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <p className="text-white/50 text-xs">نطاق الآيات المقترح</p>
+                        {calcEndAyahLoading && <div className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>}
+                      </div>
                       <p className="text-white font-black text-lg">من {startAyah} إلى {endAyah} <span className="text-emerald-400 text-sm">({ayahCount} آية)</span></p>
                     </div>
                     <button onClick={() => setShowManualRange(v => !v)}
@@ -769,7 +803,8 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
                             <div>
                               <p className="text-white/40 text-[11px] mb-1">استُخدم البحث:</p>
                               <p className="text-white/70 text-xs italic mb-2">"{smartBgResult.query}"</p>
-                              <p className="text-white/40 text-[11px]">المدة: {smartBgResult.duration}ث · {smartBgResult.width}×{smartBgResult.height}</p>
+                              <p className="text-white/40 text-[11px]">جودة المقطع: {smartBgResult.width}×{smartBgResult.height}</p>
+                              <p className="text-emerald-400/80 text-[10px] mt-0.5">* سيتم تكرار المقطع برمجياً ليطابق مدة الفيديو المطلوبة.</p>
                               <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-500/15 rounded-full text-emerald-400 text-[10px] font-bold">
                                 <Bot size={9} /> مختار بذكاء
                               </div>
@@ -849,21 +884,26 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
               {/* ── STEP 5: GENERATE ── */}
               {step === 5 && (
                 <motion.div key="s5" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="text-center">
-                  <h2 className="text-white font-black text-base mb-4 flex items-center justify-center gap-2"><Sparkles size={18} className="text-emerald-400" /> ملخص وإنشاء</h2>
+                  
+                  {!hasActiveJob && (
+                    <>
+                      <h2 className="text-white font-black text-base mb-4 flex items-center justify-center gap-2"><Sparkles size={18} className="text-emerald-400" /> ملخص وإنشاء</h2>
 
-                  <div className="grid grid-cols-2 gap-2 mb-5 text-right text-sm">
-                    {[
-                      { label: 'السورة', value: `${selectedSurah?.name} (${startAyah}–${endAyah})` },
-                      { label: 'القارئ', value: selectedReciter?.name },
-                      { label: 'الخلفية', value: bgTab === 'smart' ? `ذكية · ${smartBgResult?.query?.slice(0, 20) || ''}` : 'يدوية' },
-                      { label: 'الخاتمة', value: outros.find(o => o.id === selectedOutro)?.label },
-                    ].map(({ label, value }) => (
-                      <div key={label} className="bg-white/5 border border-white/10 rounded-xl p-3">
-                        <p className="text-white/40 text-[10px] mb-0.5">{label}</p>
-                        <p className="text-white font-bold text-xs truncate">{value || '—'}</p>
+                      <div className="grid grid-cols-2 gap-2 mb-5 text-right text-sm">
+                        {[
+                          { label: 'السورة', value: `${selectedSurah?.name} (${startAyah}–${endAyah})` },
+                          { label: 'القارئ', value: selectedReciter?.name },
+                          { label: 'الخلفية', value: bgTab === 'smart' ? `ذكية · ${smartBgResult?.query?.slice(0, 20) || ''}` : 'يدوية' },
+                          { label: 'الخاتمة', value: outros.find(o => o.id === selectedOutro)?.label },
+                        ].map(({ label, value }) => (
+                          <div key={label} className="bg-white/5 border border-white/10 rounded-xl p-3">
+                            <p className="text-white/40 text-[10px] mb-0.5">{label}</p>
+                            <p className="text-white font-bold text-xs truncate">{value || '—'}</p>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </>
+                  )}
 
                   {!jobId && !genError && (
                     <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
@@ -875,16 +915,74 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
                   )}
 
                   {jobId && jobStatus && jobStatus.status !== 'done' && !genError && (
-                    <div className="max-w-sm mx-auto">
-                      <div className="flex items-center justify-center gap-3 mb-3">
-                        <Loader2 className="animate-spin text-emerald-400 shrink-0" size={24} />
-                        <p className="text-white/70 text-sm">{jobStatus.message}</p>
+                    <div className="flex flex-col items-center justify-center min-h-[340px] w-full max-w-lg mx-auto relative">
+                      {/* Background Ambient Glow */}
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-emerald-500/10 rounded-full blur-[80px] pointer-events-none" />
+                      
+                      {/* Animated Center Icon */}
+                      <div className="relative mb-8">
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                          className="w-24 h-24 rounded-full border border-dashed border-emerald-500/30 flex items-center justify-center"
+                        >
+                          <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.3)]">
+                            <Wand2 className="text-emerald-50" size={32} />
+                          </div>
+                        </motion.div>
+                        {/* Orbiting particle */}
+                        <motion.div
+                          animate={{ rotate: -360 }}
+                          transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                          className="absolute inset-0"
+                        >
+                          <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-teal-300 rounded-full shadow-[0_0_10px_#5eead4]" />
+                        </motion.div>
                       </div>
-                      <div className="h-3 bg-white/10 rounded-full overflow-hidden">
-                        <motion.div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full"
-                          animate={{ width: `${jobStatus.progress}%` }} transition={{ duration: 0.5 }} />
+
+                      {/* Status Text */}
+                      <AnimatePresence mode="wait">
+                        <motion.h3 
+                          key={jobStatus.message}
+                          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                          className="text-xl md:text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-200 via-white to-teal-200 mb-6 text-center"
+                        >
+                          {jobStatus.message}
+                        </motion.h3>
+                      </AnimatePresence>
+
+                      {/* Progress Bar Container */}
+                      <div className="w-full mb-8">
+                        <div className="h-4 bg-black/40 border border-white/10 rounded-full overflow-hidden p-0.5 shadow-inner">
+                          <motion.div 
+                            className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 rounded-full relative"
+                            animate={{ width: `${jobStatus.progress}%` }} 
+                            transition={{ duration: 0.5, ease: "easeOut" }} 
+                          >
+                            {/* Shimmer effect inside progress bar */}
+                            <div className="absolute inset-0 bg-white/20 w-full animate-[shimmer_2s_infinite]" />
+                          </motion.div>
+                        </div>
+                        <div className="flex justify-between items-center mt-2 px-1">
+                          <span className="text-emerald-400/80 text-xs font-mono">{jobStatus.progress}%</span>
+                          <span className="text-white/30 text-[10px] tracking-wider uppercase">جاري التوليد...</span>
+                        </div>
                       </div>
-                      <p className="text-white/30 text-xs mt-1 text-left">{jobStatus.progress}%</p>
+
+                      {/* Explore Button */}
+                      <motion.button
+                        whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                        onClick={onBack}
+                        className="group w-full md:w-auto relative inline-flex items-center justify-center gap-3 px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-2xl transition-all overflow-hidden"
+                      >
+                        <div className="absolute inset-0 w-1/4 bg-gradient-to-r from-transparent via-white/5 to-transparent skew-x-[-45deg] group-hover:animate-[shimmer_1.5s_infinite]" />
+                        <Compass className="text-emerald-400 group-hover:rotate-45 transition-transform duration-500" size={20} />
+                        <span className="text-white font-bold text-sm md:text-base">استكشف الموقع بينما يجهز ريلزك</span>
+                      </motion.button>
+                      
+                      <p className="text-emerald-400/40 text-[11px] mt-4 flex items-center gap-1.5">
+                        <Sparkles size={10} /> سيظل الريلز قيد التجهيز وستتمكن من متابعة التقدم أعلى الشاشة
+                      </p>
                     </div>
                   )}
 
@@ -892,7 +990,7 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
                     <div className="max-w-sm mx-auto text-rose-400 text-sm flex flex-col items-center gap-3">
                       <AlertTriangle size={24} />
                       <p>{genError}</p>
-                      <button onClick={() => { setJobId(null); setJobStatus(null); setGenError(null); }}
+                      <button onClick={() => { clearJob(); }}
                         className="flex items-center gap-1.5 px-4 py-2 bg-white/10 hover:bg-white/15 rounded-xl text-white text-xs font-bold"
                       >
                         <RefreshCw size={13} /> إعادة المحاولة
@@ -901,21 +999,74 @@ export const ReelsStudio: React.FC<ReelsStudioProps> = ({ onBack }) => {
                   )}
 
                   {resultUrl && (
-                    <div className="max-w-xs mx-auto">
-                      <div className="mb-3 flex items-center justify-center gap-2 text-emerald-400">
-                        <CheckCircle2 size={18} /> <span className="font-black">اكتمل الفيديو!</span>
-                      </div>
-                      <video src={resultUrl} controls className="w-full rounded-xl border border-white/10 aspect-[9/16] bg-black mb-4" />
-                      <div className="flex gap-2 justify-center">
-                        <a href={resultUrl} download className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black text-sm">
-                          <Download size={15} /> تنزيل
-                        </a>
+                    <div className="flex flex-col lg:flex-row items-center lg:items-stretch justify-center gap-6 w-full max-w-4xl mx-auto mt-4">
+                      {/* Video Box */}
+                      <motion.div 
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ type: 'spring', bounce: 0.3 }}
+                        className="w-full max-w-xs shrink-0 z-20"
+                      >
+                        <div className="mb-3 flex items-center justify-center gap-2 text-emerald-400">
+                          <CheckCircle2 size={18} /> <span className="font-black">اكتمل الفيديو!</span>
+                        </div>
+                        <div className="bg-black border border-white/10 rounded-2xl overflow-hidden shadow-2xl shadow-emerald-900/30">
+                          <video src={resultUrl} controls className="w-full aspect-[9/16]" />
+                        </div>
+                      </motion.div>
+
+                      {/* Export Options Panel */}
+                      <motion.div
+                        initial={{ opacity: 0, x: 50, scale: 0.95 }}
+                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                        transition={{ type: 'spring', damping: 20, stiffness: 100, delay: 0.3 }}
+                        className="w-full max-w-sm bg-white/[0.03] border border-white/10 rounded-2xl p-6 flex flex-col justify-center z-10 lg:mt-9"
+                      >
+                        <h3 className="text-white font-black text-xl mb-1 flex items-center gap-2">
+                          <Download size={20} className="text-emerald-400" /> حفظ الفيديو
+                        </h3>
+                        <p className="text-white/40 text-sm mb-6">هل تريد تصديره؟ اختر الجودة المناسبة لجهازك</p>
+
+                        <div className="flex flex-col gap-3">
+                          {jobStatus?.outputs ? jobStatus.outputs.map((out) => {
+                            const sizeLabel = out.sizeMb >= 1024 ? `${(out.sizeMb / 1024).toFixed(2)} GB` : `${out.sizeMb} MB`;
+                            return (
+                            <a 
+                              key={out.quality}
+                              href={`/api/reels/download/${jobId}?q=${out.quality}`}
+                              download
+                              className="flex items-center justify-between p-4 rounded-xl bg-white/5 hover:bg-emerald-500/10 border border-white/5 hover:border-emerald-500/30 transition-all group"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-white/5 group-hover:bg-emerald-500/20 flex items-center justify-center text-white/50 group-hover:text-emerald-400 transition-colors">
+                                  <Download size={18} />
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-white font-bold text-sm">جودة {out.quality}</p>
+                                  <p className="text-white/40 text-xs mt-0.5">
+                                    {out.quality === '2K' ? 'فائقة الدقة (موصى بها للمنصات)' : out.quality === '1080p' ? 'عالية جداً' : out.quality === '720p' ? 'متوسطة' : 'عادية'}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="text-left">
+                                <span className="px-2 py-1 bg-black/40 text-emerald-300 border border-emerald-500/20 rounded-md text-[11px] font-mono font-bold whitespace-nowrap" dir="ltr">
+                                  {sizeLabel}
+                                </span>
+                              </div>
+                            </a>
+                          )}) : (
+                            <div className="text-white/30 text-center py-6 text-sm flex items-center justify-center gap-2">
+                              <Loader2 className="animate-spin shrink-0" size={16} /> جاري تجهيز الملفات...
+                            </div>
+                          )}
+                        </div>
+
                         <button onClick={() => { setJobId(null); setJobStatus(null); setResultUrl(null); setGenError(null); setStep(1); setSelectedSurah(null); setSelectedReciter(null); setSelectedBg(null); setSmartBgResult(null); }}
-                          className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/15 text-white rounded-xl font-bold text-sm"
+                          className="mt-6 w-full py-3.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors"
                         >
-                          <RotateCcw size={13} /> ريلز جديد
+                          <RotateCcw size={16} /> ريلز جديد
                         </button>
-                      </div>
+                      </motion.div>
                     </div>
                   )}
                 </motion.div>

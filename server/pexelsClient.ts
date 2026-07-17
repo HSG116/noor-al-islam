@@ -15,7 +15,11 @@ export async function searchBackgroundVideos(query: string, perPage = 15, page =
   const apiKey = process.env.PEXELS_API_KEY;
   if (!apiKey) throw new Error('PEXELS_API_KEY is not configured');
 
-  const url = `${PEXELS_API}?query=${encodeURIComponent(query)}&per_page=${perPage}&page=${page}&orientation=portrait`;
+  // Randomize the page number to avoid getting the exact same videos for repetitive queries
+  // Limit to 3 pages to ensure high quality results while maintaining some variety.
+  const fetchPage = page === 1 ? Math.floor(Math.random() * 3) + 1 : page;
+
+  const url = `${PEXELS_API}?query=${encodeURIComponent(query)}&per_page=${perPage}&page=${fetchPage}&orientation=portrait`;
   const res = await fetch(url, { headers: { Authorization: apiKey } });
   if (!res.ok) throw new Error(`Pexels API error ${res.status}`);
   const json: any = await res.json();

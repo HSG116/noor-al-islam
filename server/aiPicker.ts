@@ -1,3 +1,73 @@
+import { getSurahAyahs } from './quranClient';
+import ffprobeStatic from 'ffprobe-static';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
+const ffprobePath = ffprobeStatic.path;
+
+export async function getRemoteAudioDuration(url: string): Promise<number> {
+  try {
+    const { stdout } = await execAsync(`"${ffprobePath}" -i "${url}" -show_entries format=duration -v quiet -of csv="p=0"`);
+    const dur = parseFloat(stdout.trim());
+    return isNaN(dur) ? 0 : dur;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Calculate the endAyah for a given surah/startAyah/reciter to match a target duration.
+ * Uses actual audio file durations via ffprobe for precision.
+ */
+export async function calcEndAyah(
+  surahNumber: number,
+  startAyah: number,
+  reciterEdition: string,
+  targetSeconds: number
+): Promise<{ endAyah: number; totalAudioSecs: number }> {
+  const targetAudioSecs = Math.max(5, targetSeconds - 4); // 4s for outro
+  let computedEnd = startAyah;
+  let cumulativeSecs = 0;
+
+  const { ayahs, surah } = await getSurahAyahs(surahNumber);
+
+  for (let i = startAyah; i <= surah.numberOfAyahs; i += 5) {
+    const batchAyahs = [];
+    for (let j = 0; j < 5 && (i + j) <= surah.numberOfAyahs; j++) {
+      const ayahData = ayahs.find(a => a.numberInSurah === (i + j));
+      if (ayahData) batchAyahs.push(ayahData);
+    }
+    if (batchAyahs.length === 0) break;
+
+    const urls = batchAyahs.map(a =>
+      `https://cdn.islamic.network/quran/audio/128/${reciterEdition}/${a.number}.mp3`
+    );
+    const batchDurations = await Promise.all(urls.map(getRemoteAudioDuration));
+
+    let batchDone = false;
+    for (let k = 0; k < batchAyahs.length; k++) {
+      const dur = batchDurations[k];
+      const actualDur = dur > 0 ? dur : batchAyahs[k].text.length / 11.5;
+      cumulativeSecs += actualDur;
+      computedEnd = batchAyahs[k].numberInSurah;
+
+      if (cumulativeSecs >= targetAudioSecs || (computedEnd - startAyah + 1) >= 50) {
+        batchDone = true;
+        break;
+      }
+    }
+    if (batchDone) break;
+  }
+
+  console.log(
+    `[calcEndAyah] surah=${surahNumber} start=${startAyah} end=${computedEnd} ` +
+    `audioSecs=${cumulativeSecs.toFixed(1)}s target=${targetAudioSecs}s`
+  );
+
+  return { endAyah: computedEnd, totalAudioSecs: cumulativeSecs };
+}
+
 /**
  * AI-powered smart selection for Reels Studio.
  * Rule-based intelligence — no external AI API required.
@@ -130,30 +200,49 @@ const CURATED_PASSAGES: Array<{
   { surah: 103, name: 'العصر',  en: 'Al-Asr',     start: 1,  end: 3,    mood: 'حكمة',       bg: 'sunset golden hour warm light time' },
 ];
 
-// ───── Estimate ayah count from target duration ───────────────────────────
-export function durationToAyahCount(seconds: number): number {
-  return Math.max(1, Math.round(seconds / 6));
-}
+/** Pick a curated passage and dynamically set endAyah to match the target duration exactly. */
+export async function pickSmartPassage(targetSeconds: number, reciterEdition: string): Promise<SmartPassage> {
+  const pool = CURATED_PASSAGES;
+  const longMediumSurahs = pool.filter(p => p.surah <= 78);
+  const shortSurahs = pool.filter(p => p.surah > 78);
+  
+  let selectedPool = pool;
+  if (longMediumSurahs.length > 0 && shortSurahs.length > 0) {
+    // 90% chance to pick from long/medium surahs, 10% chance for short surahs
+    selectedPool = Math.random() < 0.9 ? longMediumSurahs : shortSurahs;
+  }
 
-/** Pick a curated passage closest to the target ayah count, always randomized. */
-export function pickSmartPassage(targetAyahs: number): SmartPassage {
-  const min = Math.max(1, Math.floor(targetAyahs * 0.5));
-  const max = Math.ceil(targetAyahs * 1.7);
+  // Next, heavily prefer passages from the middle/end of the Surah (start > 1)
+  const middlePassages = selectedPool.filter(p => p.start > 1);
+  const startPassages = selectedPool.filter(p => p.start === 1);
 
-  const candidates = CURATED_PASSAGES.filter((p) => {
-    const n = p.end - p.start + 1;
-    return n >= min && n <= max;
-  });
+  let finalPool = selectedPool;
+  if (middlePassages.length > 0 && startPassages.length > 0) {
+    // 95% chance to pick from the middle of the Surah, 5% to start from Ayah 1
+    finalPool = Math.random() < 0.95 ? middlePassages : startPassages;
+  } else if (middlePassages.length > 0) {
+    finalPool = middlePassages;
+  } else if (startPassages.length > 0) {
+    finalPool = startPassages;
+  }
 
-  const pool = candidates.length > 0 ? candidates : CURATED_PASSAGES;
-  const p = pool[Math.floor(Math.random() * pool.length)];
+  const p = finalPool[Math.floor(Math.random() * finalPool.length)];
+
+  let computedEnd = p.start;
+  try {
+    const { endAyah } = await calcEndAyah(p.surah, p.start, reciterEdition, targetSeconds);
+    computedEnd = endAyah;
+  } catch (err) {
+    console.error('Failed to fetch ayah durations, using fallback endAyah', err);
+    computedEnd = p.end;
+  }
 
   return {
     surahNumber: p.surah,
     surahName: p.name,
     surahEnglishName: p.en,
     startAyah: p.start,
-    endAyah: p.end,
+    endAyah: computedEnd,
     mood: p.mood,
     backgroundQuery: p.bg,
   };
@@ -183,7 +272,48 @@ const KEYWORD_RULES: Array<{ pattern: RegExp; keywords: string }> = [
   { pattern: /الكون|الفضاء|المجرة/, keywords: 'space galaxy universe cosmic stars' },
 ];
 
-const DEFAULT_KEYWORDS = 'nature peaceful landscape serene calm cinematic';
+const DEFAULT_THEMES = [
+  // ── Mountains & Valleys ──
+  'majestic mountains aerial view drone cinematic',
+  'snowy peaks winter cold freezing landscape',
+  'foggy mountain mysterious dark pine forest',
+  'green valley flowing river aerial landscape nature',
+  'volcano dramatic dark ash landscape majestic',
+  // ── Oceans & Water ──
+  'ocean waves crashing slow motion relaxing coast',
+  'deep blue sea underwater calm rays of light',
+  'tropical beach palm trees sunset golden hour',
+  'calm lake reflection mirror water morning fog',
+  'rain pouring on green leaves macro slow motion',
+  'waterfall lush green jungle rainforest amazing',
+  'underwater coral reef colorful fish beautiful',
+  // ── Skies & Cosmos ──
+  'starry night sky milky way time lapse universe',
+  'galaxy outer space cosmic beautiful journey',
+  'clouds moving fast sky timelapse heavenly',
+  'sunset horizon orange golden light beautiful',
+  'sunrise morning dawn light rays breaking clouds',
+  'northern lights aurora borealis green sky night',
+  // ── Forests & Flora ──
+  'deep green forest sunlight shining through trees',
+  'autumn leaves falling orange red forest drone',
+  'spring blooming flowers macro sunny day nature',
+  'bamboo forest tall trees calm wind relaxing',
+  'macro dew drops on grass morning fresh nature',
+  'sunflower field moving wind sunny clear sky',
+  // ── Deserts & Landscapes ──
+  'desert sand dunes golden hour beautiful cinematic',
+  'canyon red rocks desert landscape drone view',
+  'aerial view winding road through green hills',
+  'icebergs freezing cold ocean majestic nature',
+  // ── Atmospheric & Mood ──
+  'cinematic dark moody lighting nature abstract',
+  'golden light dust floating sun rays warm calm',
+  'silhouette birds flying sunset slow motion',
+  'lightning storm dramatic dark clouds thunder',
+  'gentle breeze moving grass meadow relaxing',
+  'beautiful natural wonders of the world 4k cinematic'
+];
 
 const EASTERN_ARABIC_DIGITS = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
 
@@ -197,7 +327,7 @@ export function getBackgroundKeywords(arabicText: string): string {
   for (const { pattern, keywords } of KEYWORD_RULES) {
     if (pattern.test(arabicText)) return keywords;
   }
-  return DEFAULT_KEYWORDS;
+  return DEFAULT_THEMES[Math.floor(Math.random() * DEFAULT_THEMES.length)];
 }
 
 // ───── Featured reciters (verified identifiers from alquran.cloud) ────────
@@ -218,8 +348,6 @@ export const FEATURED_RECITERS: SmartReciter[] = [
   { identifier: 'ar.parhizgar',          name: 'شهریار پرهیزگار', arabicName: 'شهریار پرهیزگار',           featured: false },
   { identifier: 'ar.walkalsheikh',       name: 'وليد الشيخ',      arabicName: 'وليد الشيخ',                featured: false },
   { identifier: 'ar.aymanswoaid',        name: 'أيمن سويد',       arabicName: 'أيمن سويد',                 featured: false },
-  // محمد اللحيدان — requested explicitly, marked featured.
-  { identifier: 'ar.mohammadallohaidan', name: 'محمد اللحيدان',   arabicName: 'محمد اللحيدان',             featured: true },
 ];
 
 export function pickSmartReciter(): SmartReciter {
@@ -231,7 +359,7 @@ export function pickSmartReciter(): SmartReciter {
 // Arabic Quranic pause/waqf marks that indicate a natural breathing point.
 const WAQF_MARKS = /[ۖۗۘۙۚۛ]/;
 // Characters count threshold above which we consider splitting worthwhile.
-const SPLIT_THRESHOLD = 90;
+const SPLIT_THRESHOLD = 70;
 const MIN_PART_LENGTH = 25;
 
 /**

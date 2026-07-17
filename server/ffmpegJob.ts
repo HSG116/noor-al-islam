@@ -1,21 +1,33 @@
 import { spawn } from 'child_process';
 import path from 'path';
+import sharp from 'sharp';
 import fs from 'fs';
 import os from 'os';
 import { randomUUID } from 'crypto';
-import { getAyahAudio, getAyahTranslation, getSurahMeta, type AyahAudio } from './quranClient';
+import ffmpegPath from 'ffmpeg-static';
+import ffprobeStatic from 'ffprobe-static';
+const ffprobePath = ffprobeStatic.path;
+import { getAyahAudio, getSurahMeta, getAyahTranslation, listReciters, getAyahCodeV2, type AyahAudio, type QCFGlyph } from './quranClient';
 import { getOutroPath } from './outros';
-import { getBackgroundKeywords, splitAyahForDisplay, toEasternArabicNumeral } from './aiPicker';
+import { getBackgroundKeywords, splitAyahForDisplay, toEasternArabicNumeral, FEATURED_RECITERS } from './aiPicker';
 import { searchMultipleBackgrounds } from './pexelsClient';
 
 export type JobStatus = 'queued' | 'fetching' | 'rendering' | 'done' | 'error';
+
+export interface JobOutput {
+  quality: '1080p' | '720p' | '480p';
+  path: string;
+  sizeMb: number;
+}
 
 export interface Job {
   id: string;
   status: JobStatus;
   progress: number; // 0-100
   message: string;
-  resultFile?: string; // absolute path once done
+  resultFile?: string; // absolute path once done (default 1080p)
+  outputs?: JobOutput[];
+  caption?: { title: string; description: string; hashtags: string };
   error?: string;
   createdAt: number;
 }
@@ -25,10 +37,10 @@ export interface GenerateOptions {
   startAyah: number;
   endAyah: number;
   reciterEdition: string;
-  backgroundVideoUrl: string; // fallback background if per-segment search is unavailable
+  backgroundVideoUrl: string;
   outroId: string;
   fontSize?: number;
-  fontColor?: string; // reserved for future use
+  fontColor?: string;
   showTranslation?: boolean;
 }
 
@@ -36,7 +48,7 @@ const jobs = new Map<string, Job>();
 export const GENERATED_DIR = path.resolve('server/generated');
 if (!fs.existsSync(GENERATED_DIR)) fs.mkdirSync(GENERATED_DIR, { recursive: true });
 
-const JOB_TTL_MS = 60 * 60 * 1000; // 1 hour retention for generated files/job records
+const JOB_TTL_MS = 60 * 60 * 1000;
 const MAX_CONCURRENT_JOBS = 2;
 let activeJobs = 0;
 const pendingQueue: (() => void)[] = [];
@@ -72,8 +84,9 @@ export function getJob(id: string): Job | undefined {
 }
 
 function run(cmd: string, args: string[]): Promise<void> {
+  const actualCmd = cmd === 'ffmpeg' ? (ffmpegPath || 'ffmpeg') : cmd;
   return new Promise((resolve, reject) => {
-    const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const p = spawn(actualCmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
     p.stderr.on('data', (d) => { stderr += d.toString(); });
     p.on('error', reject);
@@ -85,8 +98,8 @@ function run(cmd: string, args: string[]): Promise<void> {
 }
 
 const ALLOWED_DOWNLOAD_HOSTS = ['videos.pexels.com', 'images.pexels.com', 'cdn.islamic.network'];
-const MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024; // 200MB safety cap per file
-const DOWNLOAD_TIMEOUT_MS = 60_000;
+const MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024;
+const DOWNLOAD_TIMEOUT_MS = 300_000;
 
 export function assertAllowedDownloadUrl(rawUrl: string): void {
   let parsed: URL;
@@ -131,7 +144,7 @@ async function downloadFile(url: string, destPath: string): Promise<void> {
 
 async function getDuration(filePath: string): Promise<number> {
   return new Promise((resolve, reject) => {
-    const p = spawn('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', filePath]);
+    const p = spawn(ffprobePath || 'ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', filePath]);
     let out = '';
     p.stdout.on('data', (d) => { out += d.toString(); });
     p.on('error', reject);
@@ -139,143 +152,348 @@ async function getDuration(filePath: string): Promise<number> {
   });
 }
 
-function escapeAss(text: string): string {
-  return text.replace(/\\/g, '\\\\').replace(/\n/g, '\\N').replace(/[{}]/g, '');
-}
+// ─── Segment & Layout Types ──────────────────────────────────────────────
 
-function formatAssTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const cs = Math.round((seconds - Math.floor(seconds)) * 100);
-  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
-}
-
-interface Segment {
+export interface Segment {
   text: string;
-  start: number; // seconds within full timeline
-  end: number;   // seconds within full timeline
+  start: number;
+  end: number;
   bgQuery: string;
   surahNameArabic: string;
-  ayahNumber: number; // numberInSurah, shown as the Quranic end-of-ayah ornament
-  isLastPartOfAyah: boolean; // only the final split-part of an ayah carries the ۝ ornament
+  ayahNumber: number;
+  isLastPartOfAyah: boolean;
   translation?: string;
+  codeV2?: string;       // QCF2 glyph codes for this segment
+  v2Page?: number;       // Mushaf page number (1-604) → QCF2{page}.ttf
 }
 
-// Max text block width: ~65% of the 1080px canvas (per the "60-70%" spec),
-// used to estimate how many lines a given ayah will wrap to at a given size.
-const MAX_TEXT_WIDTH_PX = Math.round(1080 * 0.65);
-// Rough average glyph width for Amiri Arabic (incl. diacritics) as a fraction
-// of font size — used only to *estimate* wrap-line count, not to lay out text.
-const AVG_GLYPH_WIDTH_RATIO = 0.42;
+// ─── SVG/PNG Text Overlay Generation (Fontkit-based) ─────────────────────
+// Sharp's SVG renderer (librsvg) CANNOT load custom fonts via @font-face
+// with base64 data URIs. So we use fontkit to convert QCF2 glyph codes
+// into raw SVG <path> elements, bypassing font loading entirely.
+// This guarantees pixel-perfect Mushaf rendering.
+
+import * as fontkit from 'fontkit';
+
+const FONTS_DIR = path.resolve('fontss/QCF2BSMLfonts');
+
+// Cache loaded fontkit Font objects (much faster than re-parsing from disk)
+const fontkitCache = new Map<number, any>();
+
+function getQCFFont(pageNum: number): any {
+  const cached = fontkitCache.get(pageNum);
+  if (cached) return cached;
+  const padded = String(pageNum).padStart(3, '0');
+  const fontPath = path.join(FONTS_DIR, `QCF2${padded}.ttf`);
+  let font: any;
+  if (fs.existsSync(fontPath)) {
+    font = fontkit.openSync(fontPath);
+  } else {
+    console.warn(`QCF2 font for page ${pageNum} not found, falling back to page 1`);
+    font = fontkit.openSync(path.join(FONTS_DIR, 'QCF2001.ttf'));
+  }
+  fontkitCache.set(pageNum, font);
+  return font;
+}
+
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
 
 /**
- * Responsive typography: the ayah font size is derived continuously from how
- * many lines the ayah is estimated to wrap to at a reference size (which
- * itself comes from the ayah's character length), instead of a handful of
- * fixed buckets. One line loses no size, each extra line shaves a consistent
- * amount off the scale — so a 1-line ayah and a 6-line ayah both look
- * intentional and proportioned, never "huge" or "tiny".
+ * Render a string of QCF2 glyph codes into SVG <path> elements using fontkit.
+ * Returns the SVG markup and the total rendered width in pixels.
+ * Fontkit applies bidi layout, returning glyphs in visual Left-to-Right order.
+ * So we draw them left-to-right starting from (centerX - widthPx/2).
  */
-function computeFontSize(text: string, base: number): number {
-  const len = Math.max(1, text.length);
-  const charsPerLineAtBase = MAX_TEXT_WIDTH_PX / (base * AVG_GLYPH_WIDTH_RATIO);
-  const estimatedLines = Math.max(1, Math.ceil(len / charsPerLineAtBase));
-  const scale = 1.18 - 0.13 * (estimatedLines - 1);
-  const clampedScale = Math.max(0.55, Math.min(1.05, scale));
-  const size = Math.round(base * clampedScale);
-  return Math.max(52, Math.min(118, size));
-}
+function renderQCFToSvgPaths(
+  text: string,
+  font: any,
+  fontSize: number,
+  centerX: number,
+  baselineY: number,
+  fillColor: string,
+): { svg: string; widthPx: number } {
+  const run = font.layout(text);
+  const scale = fontSize / font.unitsPerEm;
 
-// Vertical anchor for the whole caption block — centered horizontally, and
-// roughly vertically centered with a slight downward offset (per the updated
-// professional Quran-reel layout). Every video uses the exact same anchor so
-// the composition stays consistent.
-const TEXT_ANCHOR_Y = Math.round(1920 * 0.52);
-// Max text width: ~65% of the 1080px canvas, matching MAX_TEXT_WIDTH_PX.
-const SIDE_MARGIN = Math.round((1080 - MAX_TEXT_WIDTH_PX) / 2);
-// NOTE: The "Elgharib" font files supplied by the user (all 3 variants) are
-// watermarked demo fonts — they silently replace ANY Arabic text with a fixed
-// vendor watermark string ("تم تركيب الخط بواسطة ...") no matter what is
-// rendered. Confirmed via direct font rendering test and matching file
-// checksums across "different" uploads. They cannot be used until the user
-// provides the real licensed files. Falling back to Amiri, a proper full
-// Unicode Arabic typeface already bundled in the app.
-const PRIMARY_FONT = 'Amiri';
-const TRANSLATION_FONT = 'Inter';
-
-function buildAssFile(segments: Segment[], workDir: string, baseFontSize: number, showTranslation: boolean): string {
-  const header = `[Script Info]
-ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
-WrapStyle: 1
-ScaledBorderAndShadow: yes
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Ayah,${PRIMARY_FONT},${baseFontSize},&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,1,0,0,0,100,100,0,0,1,2,1,5,${SIDE_MARGIN},${SIDE_MARGIN},0,1
-Style: Glow,${PRIMARY_FONT},${baseFontSize},&H00FFFFFF,&H000000FF,&H00FFFFFF,&H00000000,1,0,0,0,100,100,0,0,1,0,0,5,${SIDE_MARGIN},${SIDE_MARGIN},0,1
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-`;
-  const lines: string[] = [];
-  for (const s of segments) {
-    const ayahFs = computeFontSize(s.text, baseFontSize);
-    // Translation is 45%-55% of the ayah size per spec — use the midpoint (~50%).
-    const translationFs = Math.round(ayahFs * 0.5);
-    const surahFs = Math.round(ayahFs * 0.34);
-    const gap14Fs = 11; // invisible spacer line tuned to approximate a 14px gap (ayah -> translation)
-    const gap10Fs = 8;  // invisible spacer line tuned to approximate a 10px gap (translation -> surah name)
-    const startT = formatAssTime(s.start);
-    const endT = formatAssTime(s.end);
-    // Fade-in + gentle scale-up (0.98 -> 1.0 over 500ms), then stays fully static — no bounce/rotation/shake.
-    const animTag = `{\\an5\\pos(540,${TEXT_ANCHOR_Y})\\fad(180,120)\\fscx98\\fscy98\\t(0,500,\\fscx100\\fscy100)}`;
-    const escapedAyah = escapeAss(s.text);
-
-    // Quranic end-of-ayah ornament with the ayah number set INSIDE it (۝٣٩,
-    // not ٣٩ ۝), appended immediately after the ayah text with no separating
-    // space so it reads as part of the ayah rather than a separate element.
-    // Sized ~70% of the ayah text per spec.
-    const ornament = s.isLastPartOfAyah ? `{\\fs${Math.round(ayahFs * 0.7)}}۝${toEasternArabicNumeral(s.ayahNumber)}{\\fs${ayahFs}}` : '';
-
-    const surahLine = `${s.surahNameArabic} • الآية ${toEasternArabicNumeral(s.ayahNumber)}`;
-
-    let body = `{\\fs${ayahFs}\\b1}${escapedAyah}${ornament}`;
-    if (showTranslation && s.translation) {
-      body += `\\N{\\fs${gap14Fs}\\alpha&HFF&}.{\\alpha&H00&}`; // invisible spacer ≈14px
-      body += `\\N{\\fs${translationFs}\\fn${TRANSLATION_FONT}\\b0\\c&HE6E6E6&\\alpha&H1A&\\bord0.8\\shad0.6}${escapeAss(s.translation)}`;
-      body += `{\\fs${gap10Fs}\\alpha&HFF&}\\N.{\\alpha&H00&}`; // invisible spacer ≈10px
-    } else {
-      body += `\\N{\\fs${gap10Fs}\\alpha&HFF&}.{\\alpha&H00&}`;
-    }
-    body += `\\N{\\fs${surahFs}\\fn${PRIMARY_FONT}\\b0\\c&HDDDDDD&\\bord1\\shad0.6}${escapeAss(surahLine)}`;
-
-    // Soft glow pass (drawn first / lower layer), gently blurred, low opacity white — a subtle, understated halo (not a strong effect).
-    lines.push(`Dialogue: 0,${startT},${endT},Glow,,0,0,0,,${animTag}{\\blur5\\alpha&HD8&}${body}`);
-    // Crisp main pass (drawn on top): pure white fill, black stroke, light shadow.
-    lines.push(`Dialogue: 1,${startT},${endT},Ayah,,0,0,0,,${animTag}{\\bord2\\shad1\\blur0.3}${body}`);
+  // Calculate total advance width
+  let totalAdvance = 0;
+  for (let i = 0; i < run.glyphs.length; i++) {
+    totalAdvance += run.positions[i].xAdvance;
   }
-  const assPath = path.join(workDir, 'captions.ass');
-  fs.writeFileSync(assPath, header + lines.join('\n') + '\n', 'utf-8');
-  return assPath;
+  const widthPx = totalAdvance * scale;
+
+  // Fontkit returns glyphs in visual LTR order. Start from the left.
+  let cursorX = centerX - widthPx / 2;
+
+  let paths = '';
+  for (let i = 0; i < run.glyphs.length; i++) {
+    const glyph = run.glyphs[i];
+    const pos = run.positions[i];
+    const advancePx = pos.xAdvance * scale;
+
+    const pathData = glyph.path?.toSVG();
+    if (pathData && pathData.length >= 3) {
+      // Font glyphs are in em units with Y going up, SVG Y goes down, so we flip Y
+      const tx = cursorX + (pos.xOffset * scale);
+      const ty = baselineY - (pos.yOffset * scale);
+
+      paths += `<path d="${pathData}" transform="translate(${tx.toFixed(1)}, ${ty.toFixed(1)}) scale(${scale.toFixed(6)}, ${(-scale).toFixed(6)})" fill="${fillColor}" />\n`;
+    }
+
+    // Move cursor right for the next glyph
+    cursorX += advancePx;
+  }
+
+  return { svg: paths, widthPx };
 }
 
-/** Build the per-segment reading timeline, splitting long ayahs into natural, readable chunks. */
+/**
+ * Measure the pixel width of a QCF2 text string at a given font size.
+ */
+function measureQCFWidth(text: string, font: any, fontSize: number): number {
+  const run = font.layout(text);
+  const scale = fontSize / font.unitsPerEm;
+  let totalAdvance = 0;
+  for (let i = 0; i < run.glyphs.length; i++) {
+    totalAdvance += run.positions[i].xAdvance;
+  }
+  return totalAdvance * scale;
+}
+
+function wrapText(text: string, maxChars: number): string[] {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let current = '';
+  for (const w of words) {
+    if (!current) { current = w; continue; }
+    if (current.length + w.length + 1 > maxChars) {
+      lines.push(current);
+      current = w;
+    } else {
+      current += ' ' + w;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+/**
+ * Choose an appropriate base Arabic font size based on glyph count.
+ */
+function computeArabicFontSize(glyphCount: number): number {
+  if (glyphCount <= 4)   return 100;
+  if (glyphCount <= 7)   return 85;
+  if (glyphCount <= 10)  return 75;
+  if (glyphCount <= 15)  return 65;
+  if (glyphCount <= 20)  return 55;
+  if (glyphCount <= 30)  return 45;
+  return 40;
+}
+
+async function buildTextOverlays(
+  segments: Segment[],
+  workDir: string,
+  width: number,
+  height: number,
+  showTranslation: boolean,
+): Promise<{ textPaths: string[] }> {
+  const textPaths: string[] = [];
+  const MAX_TEXT_WIDTH = Math.round(width * 0.85);
+  const topSafe = Math.round(height * 0.12);
+  const bottomSafe = Math.round(height * 0.88);
+
+  for (let i = 0; i < segments.length; i++) {
+    const s = segments[i];
+    const hasQCF = !!(s.codeV2 && s.v2Page);
+
+    // ── Determine Arabic font size and scale to fit single line ──
+    let arabicFs: number;
+    let arLine: string;
+    let qcfFont: any = null;
+
+    if (hasQCF) {
+      qcfFont = getQCFFont(s.v2Page!);
+      const glyphWords = s.codeV2!.trim().split(/\s+/);
+      arabicFs = computeArabicFontSize(glyphWords.length);
+      
+      if (s.isLastPartOfAyah && glyphWords.length > 1) {
+        const lastWord = glyphWords.pop();
+        arLine = glyphWords.join(' ') + '      ' + lastWord;
+      } else {
+        arLine = s.codeV2!;
+      }
+      
+      // Force single line: if it's too wide, scale font size down
+      let w = measureQCFWidth(arLine, qcfFont, arabicFs);
+      if (w > MAX_TEXT_WIDTH) {
+        arabicFs = arabicFs * (MAX_TEXT_WIDTH / w);
+      }
+    } else {
+      arabicFs = 72;
+      const ornament = s.isLastPartOfAyah ? `   ۝${toEasternArabicNumeral(s.ayahNumber)}` : '';
+      arLine = s.text + ornament;
+      // Very rough estimation for fallback font
+      const maxCharsAr = Math.floor((MAX_TEXT_WIDTH / arabicFs) * 2.0);
+      if (arLine.length > maxCharsAr) {
+        arabicFs = arabicFs * (maxCharsAr / arLine.length);
+      }
+    }
+
+    const transFs = Math.max(22, Math.round(arabicFs * 0.35));
+    const surahFs = Math.max(18, Math.round(arabicFs * 0.3));
+
+    // ── Wrap Translation ──
+    let trLines: string[] = [];
+    if (showTranslation && s.translation) {
+      const maxCharsTr = Math.floor((MAX_TEXT_WIDTH / transFs) * 2.2);
+      trLines = wrapText(s.translation, maxCharsTr);
+      if (trLines.length > 3) trLines = trLines.slice(0, 3); // max 3 lines
+    }
+
+    const surahText = `${s.surahNameArabic}  ·  الآية ${toEasternArabicNumeral(s.ayahNumber)}`;
+
+    // ── Vertical Layout ──
+    const gapArabicToTrans = Math.round(arabicFs * 0.35); // Closer gap!
+    const transLineHeight = transFs * 1.5;
+    const gapTransToSurah = Math.round(arabicFs * 0.35); // Closer gap!
+
+    let currentYOffset = 0; // Arabic baseline
+    
+    let transBaselineY = 0;
+    let surahBaselineY = 0;
+    
+    if (trLines.length > 0) {
+      // arabicFs * 0.3 accounts for Arabic text descent
+      currentYOffset += arabicFs * 0.3 + gapArabicToTrans + transFs; 
+      transBaselineY = currentYOffset;
+      currentYOffset += (trLines.length - 1) * transLineHeight;
+    }
+    
+    // transFs * 0.3 accounts for English text descent
+    currentYOffset += transFs * 0.3 + gapTransToSurah + surahFs;
+    surahBaselineY = currentYOffset;
+    
+    // Total block metrics
+    const blockTopOffset = -arabicFs * 0.85; // Approximate ascent of Arabic
+    const blockBottomOffset = surahBaselineY + surahFs * 0.3; // Approximate descent of Surah text
+    const totalContentHeight = blockBottomOffset - blockTopOffset;
+
+    // Optical center (slightly above true center)
+    const opticalY = Math.round(height * 0.46);
+    let blockTop = Math.round(opticalY - totalContentHeight / 2);
+    if (blockTop < topSafe) blockTop = topSafe;
+    if (blockTop + totalContentHeight > bottomSafe) blockTop = bottomSafe - totalContentHeight;
+
+    // ── Glassmorphism Box ──
+    const padX = Math.round(arabicFs * 0.8);
+    const padY = Math.round(arabicFs * 0.6);
+    const boxW = MAX_TEXT_WIDTH + padX * 2;
+    const boxH = totalContentHeight + padY * 2;
+    const boxL = Math.round((width - boxW) / 2);
+    const boxT = blockTop - padY;
+
+    // Screen Baselines
+    const arabicScreenY = blockTop - blockTopOffset;
+    const transScreenY = arabicScreenY + transBaselineY;
+    const surahScreenY = arabicScreenY + surahBaselineY;
+    const centerX = width / 2;
+
+    // ── Build SVG ──
+    let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="shadow">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="5" />
+          <feOffset dx="0" dy="3" />
+          <feComponentTransfer><feFuncA type="linear" slope="0.65"/></feComponentTransfer>
+          <feMerge>
+            <feMergeNode />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <filter id="glow">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="3" />
+          <feComponentTransfer><feFuncA type="linear" slope="0.35"/></feComponentTransfer>
+          <feMerge>
+            <feMergeNode />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <linearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#F5E6C8" />
+          <stop offset="50%" stop-color="#FFFFFF" />
+          <stop offset="100%" stop-color="#F5E6C8" />
+        </linearGradient>
+      </defs>
+    `;
+
+    // ── Arabic Quranic Text (rendered via fontkit paths) ──
+    if (hasQCF && qcfFont) {
+      const { svg: glowSvg } = renderQCFToSvgPaths(arLine, qcfFont, arabicFs, centerX, arabicScreenY, 'rgba(255,255,255,0.15)');
+      svg += `<g transform="translate(0, 3)" filter="url(#glow)">${glowSvg}</g>\n`;
+      
+      const { svg: pathsSvg } = renderQCFToSvgPaths(arLine, qcfFont, arabicFs, centerX, arabicScreenY, 'url(#goldGrad)');
+      svg += `<g filter="url(#shadow)">${pathsSvg}</g>\n`;
+    } else {
+      // Fallback: plain text with system Arabic font
+      svg += `<text x="${centerX}" y="${arabicScreenY}" font-family="'Traditional Arabic', 'Amiri', serif" font-size="${arabicFs}" fill="white" text-anchor="middle" direction="rtl" filter="url(#shadow)">`;
+      svg += `<tspan x="${centerX}">${escapeXml(arLine)}</tspan>`;
+      svg += `</text>`;
+    }
+
+    // ── English Translation (system font — librsvg handles these fine) ──
+    if (trLines.length > 0) {
+      let tLines = '';
+      trLines.forEach((l, idx) => {
+        tLines += `<tspan x="${centerX}" dy="${idx === 0 ? 0 : transLineHeight}">${escapeXml(l)}</tspan>`;
+      });
+      svg += `<text x="${centerX}" y="${transScreenY}" font-family="'Inter', 'Open Sans', sans-serif" font-size="${transFs}" fill="rgba(255,255,255,0.85)" text-anchor="middle" direction="ltr" filter="url(#shadow)">${tLines}</text>\n`;
+    }
+
+    // ── Surah Info ──
+    svg += `<text x="${centerX}" y="${surahScreenY}" font-family="'Traditional Arabic', 'Amiri', serif" font-size="${surahFs}" fill="rgba(255,255,255,0.6)" text-anchor="middle" direction="rtl" filter="url(#shadow)">${surahText}</text>\n`;
+
+    svg += `</svg>`;
+
+    const textPath = path.join(workDir, `text_${i}.png`);
+    await sharp(Buffer.from(svg)).png().toFile(textPath);
+    textPaths.push(textPath);
+  }
+
+  return { textPaths };
+}
+
+// ─── Segment Building ────────────────────────────────────────────────────
+
 function buildSegments(
   ayahAudios: AyahAudio[],
   durations: number[],
   surahNameArabic: string,
   translations: (string | undefined)[],
+  qcfGlyphs: QCFGlyph[],
 ): Segment[] {
   const segments: Segment[] = [];
   let cursor = 0;
+
+  // Build a lookup map for QCF glyphs by ayah number
+  const qcfMap = new Map<number, QCFGlyph>();
+  for (const g of qcfGlyphs) {
+    qcfMap.set(g.numberInSurah, g);
+  }
+
   for (let i = 0; i < ayahAudios.length; i++) {
     const ayahDuration = durations[i];
     const parts = splitAyahForDisplay(ayahAudios[i].text);
     const ayahNumber = ayahAudios[i].numberInSurah;
     const translation = translations[i];
+    const qcf = qcfMap.get(ayahNumber);
+
     if (parts.length === 1) {
       segments.push({
         text: parts[0],
@@ -286,13 +504,33 @@ function buildSegments(
         ayahNumber,
         isLastPartOfAyah: true,
         translation,
+        codeV2: qcf?.codeV2,
+        v2Page: qcf?.v2Page,
       });
     } else {
+      // When splitting a long ayah, the full QCF code_v2 goes on the last part
+      // and each part gets the same v2Page so the correct font is loaded.
       const totalChars = parts.reduce((n, p) => n + p.length, 0);
       let partCursor = cursor;
+
+      // Split QCF glyphs proportionally across parts
+      const allGlyphWords = qcf?.codeV2?.trim().split(/\s+/) || [];
+      const totalGlyphWords = allGlyphWords.length;
+
       for (let j = 0; j < parts.length; j++) {
         const share = parts[j].length / totalChars;
         const dur = j === parts.length - 1 ? (cursor + ayahDuration - partCursor) : ayahDuration * share;
+
+        // Split glyph words proportionally
+        let partCodeV2: string | undefined;
+        if (totalGlyphWords > 0) {
+          const startWord = Math.round(j * totalGlyphWords / parts.length);
+          const endWord = j === parts.length - 1
+            ? totalGlyphWords
+            : Math.round((j + 1) * totalGlyphWords / parts.length);
+          partCodeV2 = allGlyphWords.slice(startWord, endWord).join(' ');
+        }
+
         segments.push({
           text: parts[j],
           start: partCursor,
@@ -302,6 +540,8 @@ function buildSegments(
           ayahNumber,
           isLastPartOfAyah: j === parts.length - 1,
           translation,
+          codeV2: partCodeV2,
+          v2Page: qcf?.v2Page,
         });
         partCursor += dur;
       }
@@ -311,14 +551,11 @@ function buildSegments(
   return segments;
 }
 
-const TRANSITION = 0.6; // seconds of cross-fade between backgrounds
+// ─── Background Video Track ──────────────────────────────────────────────
+
+const TRANSITION = 0.6;
 const MIN_SEG_FOR_TRANSITION = 1.2;
 
-/**
- * Build a single background video track that changes for every segment,
- * cross-fading smoothly between clips so the visuals feel calm and cinematic
- * rather than jarring hard cuts.
- */
 async function buildBackgroundTrack(
   segments: Segment[],
   bgFiles: string[],
@@ -328,7 +565,6 @@ async function buildBackgroundTrack(
   const useTransitions = n > 1 && segments.every((s) => s.end - s.start > MIN_SEG_FOR_TRANSITION);
   const overlap = useTransitions ? TRANSITION : 0;
 
-  // Render each segment's background to an exact-duration, correctly framed clip.
   const clipPaths: string[] = [];
   for (let i = 0; i < n; i++) {
     const segDur = segments[i].end - segments[i].start;
@@ -349,7 +585,6 @@ async function buildBackgroundTrack(
   if (n === 1) return clipPaths[0];
 
   if (!useTransitions) {
-    // Segments too short for a nice cross-fade — simple hard-cut concat instead.
     const listPath = path.join(workDir, 'bg-concat-list.txt');
     fs.writeFileSync(listPath, clipPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n'));
     const outPath = path.join(workDir, 'bg-track.mp4');
@@ -357,15 +592,12 @@ async function buildBackgroundTrack(
     return outPath;
   }
 
-  // Chain xfade transitions so the total output duration equals the sum of
-  // segment durations exactly (each intermediate clip is padded by `overlap`
-  // seconds to donate footage to the cross-fade).
   const inputs: string[] = [];
   clipPaths.forEach((p) => { inputs.push('-i', p); });
 
   let filter = '';
   let lastLabel = '[0:v]';
-  let cumulative = segments[0].end - segments[0].start + overlap; // duration of clip 0
+  let cumulative = segments[0].end - segments[0].start + overlap;
   for (let i = 1; i < n; i++) {
     const segDur = segments[i].end - segments[i].start;
     const clipDur = i < n - 1 ? segDur + overlap : segDur;
@@ -390,15 +622,87 @@ async function buildBackgroundTrack(
   return outPath;
 }
 
+// ─── Job Management ──────────────────────────────────────────────────────
+
 export function createJob(): Job {
   const job: Job = { id: randomUUID(), status: 'queued', progress: 0, message: 'في قائمة الانتظار...', createdAt: Date.now() };
   jobs.set(job.id, job);
   return job;
 }
 
+// ─── Caption Generation ──────────────────────────────────────────────────
+
+/** Map of surah themes/moods to fitting emojis */
+const SURAH_EMOJIS: Record<string, string> = {
+  'الفاتحة': '🤲', 'البقرة': '🌟', 'آل عمران': '💎', 'النساء': '⚖️', 'المائدة': '📜',
+  'الأنعام': '🌿', 'الأعراف': '🏔️', 'الأنفال': '⚔️', 'التوبة': '🔥', 'يونس': '🌊',
+  'هود': '⛰️', 'يوسف': '🌙', 'الرعد': '⛈️', 'إبراهيم': '🌳', 'الحجر': '🏜️',
+  'النحل': '🐝', 'الإسراء': '✨', 'الكهف': '🕳️', 'مريم': '🌹', 'طه': '💫',
+  'الأنبياء': '🕊️', 'الحج': '🕋', 'المؤمنون': '🙏', 'النور': '💡', 'الفرقان': '📖',
+  'الشعراء': '🎭', 'النمل': '🐜', 'القصص': '📚', 'العنكبوت': '🕸️', 'الروم': '🏛️',
+  'لقمان': '🧠', 'السجدة': '🤲', 'الأحزاب': '🛡️', 'سبأ': '🏰', 'فاطر': '🌌',
+  'يس': '❤️', 'الصافات': '👼', 'ص': '👑', 'الزمر': '🌅', 'غافر': '🤲',
+  'فصلت': '📜', 'الشورى': '🤝', 'الزخرف': '✨', 'الدخان': '🌫️', 'الجاثية': '⏳',
+  'الأحقاف': '🏜️', 'محمد': '⚔️', 'الفتح': '🏆', 'الحجرات': '🏡', 'ق': '🌿',
+  'الذاريات': '💨', 'الطور': '⛰️', 'النجم': '⭐', 'القمر': '🌙', 'الرحمن': '🌺',
+  'الواقعة': '😨', 'الحديد': '⚙️', 'المجادلة': '💬', 'الحشر': '🏰', 'الممتحنة': '📋',
+  'الصف': '🎖️', 'الجمعة': '🕌', 'المنافقون': '🎭', 'التغابن': '⚖️', 'الطلاق': '📜',
+  'التحريم': '🔒', 'الملك': '👑', 'القلم': '🖊️', 'الحاقة': '💥', 'المعارج': '🪜',
+  'نوح': '🚢', 'الجن': '👻', 'المزمل': '🌙', 'المدثر': '🔔', 'القيامة': '😱',
+  'الإنسان': '🧬', 'المرسلات': '💨', 'النبأ': '📢', 'النازعات': '🌊', 'عبس': '😶',
+  'التكوير': '☀️', 'الانفطار': '🌌', 'المطففين': '⚖️', 'الانشقاق': '🌅', 'البروج': '⭐',
+  'الطارق': '🌟', 'الأعلى': '🙌', 'الغاشية': '😰', 'الفجر': '🌄', 'البلد': '🏙️',
+  'الشمس': '☀️', 'الليل': '🌙', 'الضحى': '🌤️', 'الشرح': '💖', 'التين': '🫒',
+  'العلق': '🩸', 'القدر': '✨', 'البينة': '📜', 'الزلزلة': '🌍', 'العاديات': '🐎',
+  'القارعة': '💥', 'التكاثر': '💰', 'العصر': '⏰', 'الهمزة': '🗣️', 'الفيل': '🐘',
+  'قريش': '🐪', 'الماعون': '🤲', 'الكوثر': '💧', 'الكافرون': '🚫', 'النصر': '🏆',
+  'المسد': '🔥', 'الإخلاص': '💎', 'الفلق': '🌅', 'الناس': '🧑‍🤝‍🧑',
+};
+
+const INSPIRATIONAL_PHRASES = [
+  'تلاوة تهز القلوب',
+  'تلاوة خاشعة ومؤثرة',
+  'من أجمل التلاوات',
+  'تلاوة تريح النفس',
+  'تلاوة تملأ القلب سكينة',
+  'تلاوة مُبكية ومؤثرة',
+  'من روائع التلاوات',
+  'تلاوة تأخذك إلى عالم آخر',
+];
+
+function generateCaption(
+  surahMeta: { name: string; englishName: string; number: number },
+  reciterEdition: string,
+  startAyah: number,
+  endAyah: number,
+  allReciters: any[]
+): { title: string; description: string; hashtags: string } {
+  // Find Arabic reciter name
+  const featured = FEATURED_RECITERS.find(r => r.identifier === reciterEdition);
+  const fromApi = allReciters.find(r => r.identifier === reciterEdition);
+  const reciterName = featured?.arabicName || fromApi?.name || featured?.name || reciterEdition.replace('ar.', '').replace(/([A-Z])/g, ' $1').trim();
+
+  // Surah name without ‎سورة prefix
+  const surahClean = surahMeta.name.replace(/^سُورَةُ\s*/, '').replace(/^سورة\s*/, '');
+  const emoji = SURAH_EMOJIS[surahClean] || '📖';
+  const phrase = INSPIRATIONAL_PHRASES[Math.floor(Math.random() * INSPIRATIONAL_PHRASES.length)];
+
+  const ayahRange = startAyah === endAyah ? `الآية ${startAyah}` : `الآيات ${startAyah}-${endAyah}`;
+
+  const title = `${emoji} سورة ${surahClean} | ${phrase}`;
+  const description = `${emoji} سورة ${surahClean} - ${ayahRange}\n🎙️ بصوت الشيخ ${reciterName}\n\n${phrase} 🤍\nاستمع وشارك الأجر ✨`;
+
+  // 5 hashtags
+  const surahTag = `#سورة_${surahClean.replace(/\s+/g, '_')}`;
+  const reciterTag = `#${reciterName.replace(/\s+/g, '_')}`;
+  const hashtags = `${surahTag} #قرآن_كريم ${reciterTag} #تلاوة #موقع_نور_الاسلام`;
+
+  return { title, description, hashtags };
+}
+
 export async function runGenerateJob(job: Job, opts: GenerateOptions) {
   await acquireSlot();
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'reels-'));
+  const workDir = fs.mkdtempSync(path.join(GENERATED_DIR, 'work-'));
   try {
     job.status = 'fetching';
     job.message = 'جلب الآيات والصوت...';
@@ -411,7 +715,7 @@ export async function runGenerateJob(job: Job, opts: GenerateOptions) {
     for (let i = opts.startAyah; i <= opts.endAyah; i++) {
       const a = await getAyahAudio(opts.surahNumber, i, opts.reciterEdition);
       ayahAudios.push(a);
-      job.progress = 5 + Math.round((10 * (i - opts.startAyah + 1)) / ayahCount);
+      job.progress = 5 + Math.round((5 * (i - opts.startAyah + 1)) / ayahCount);
     }
 
     // Download each ayah's audio file
@@ -420,17 +724,20 @@ export async function runGenerateJob(job: Job, opts: GenerateOptions) {
       const dest = path.join(workDir, `ayah-${i}.mp3`);
       await downloadFile(ayahAudios[i].audioUrl, dest);
       audioFiles.push(dest);
-      job.progress = 15 + Math.round((15 * (i + 1)) / ayahAudios.length);
+      job.progress = 10 + Math.round((10 * (i + 1)) / ayahAudios.length);
     }
 
-    // Compute per-ayah durations to time captions and backgrounds
+    // Compute per-ayah durations
     const durations: number[] = [];
     for (const f of audioFiles) durations.push(await getDuration(f));
-
     const totalAudioDuration = durations.reduce((a, b) => a + b, 0);
 
-    // Fetch surah name + English translations (used for the caption block below the ayah)
-    const surahMeta = await getSurahMeta(opts.surahNumber);
+    // Fetch surah name + English translations
+    const [surahMeta, allReciters] = await Promise.all([
+      getSurahMeta(opts.surahNumber),
+      listReciters()
+    ]);
+    job.caption = generateCaption(surahMeta, opts.reciterEdition, opts.startAyah, opts.endAyah, allReciters);
     const showTranslation = opts.showTranslation !== false;
     let translations: (string | undefined)[] = [];
     if (showTranslation) {
@@ -443,22 +750,30 @@ export async function runGenerateJob(job: Job, opts: GenerateOptions) {
       translations = ayahAudios.map(() => undefined);
     }
 
-    // Split long ayahs into natural, readable segments and build the timeline
-    const segments = buildSegments(ayahAudios, durations, surahMeta.name, translations);
+    // Fetch QCF2 glyph data from Quran.com API
+    job.message = 'جلب خطوط المصحف (QCF2)...';
+    let qcfGlyphs: QCFGlyph[] = [];
+    try {
+      qcfGlyphs = await getAyahCodeV2(opts.surahNumber, opts.startAyah, opts.endAyah);
+    } catch (err) {
+      console.warn('Failed to fetch QCF2 glyphs, falling back to plain text:', err);
+    }
 
-    // Concat audio (mp3 -> concat demuxer needs a list file; re-encode to be safe)
+    // Build segments
+    const segments = buildSegments(ayahAudios, durations, surahMeta.name, translations, qcfGlyphs);
+
+    // Concat audio
     job.status = 'rendering';
     job.message = 'دمج الصوت...';
-    job.progress = 30;
+    job.progress = 25;
     const concatListPath = path.join(workDir, 'audio-list.txt');
     fs.writeFileSync(concatListPath, audioFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n'));
     const mergedAudio = path.join(workDir, 'merged-audio.m4a');
     await run('ffmpeg', ['-y', '-f', 'concat', '-safe', '0', '-i', concatListPath, '-c:a', 'aac', '-b:a', '192k', mergedAudio]);
 
-    // Pick a distinct, matching background per segment so the scenery changes
-    // with the recitation instead of a single static clip for the whole reel.
+    // Pick backgrounds
     job.message = 'اختيار خلفيات مناسبة لكل آية...';
-    job.progress = 40;
+    job.progress = 30;
     let bgUrls: string[] = [];
     try {
       if (process.env.PEXELS_API_KEY) {
@@ -467,13 +782,12 @@ export async function runGenerateJob(job: Job, opts: GenerateOptions) {
       }
     } catch { /* fall back below */ }
     if (bgUrls.length < segments.length) {
-      // Pad missing entries with the caller-provided background so the video always renders.
       while (bgUrls.length < segments.length) bgUrls.push(opts.backgroundVideoUrl);
     }
 
-    // Download each unique background once
+    // Download backgrounds
     job.message = 'تحميل الخلفيات...';
-    job.progress = 48;
+    job.progress = 35;
     const urlToFile = new Map<string, string>();
     const bgFiles: string[] = [];
     for (let i = 0; i < bgUrls.length; i++) {
@@ -487,33 +801,116 @@ export async function runGenerateJob(job: Job, opts: GenerateOptions) {
       bgFiles.push(file);
     }
 
-    // Build the changing, cross-faded background track matched to the segment timeline
+    // Build background track
     job.message = 'تركيب الخلفيات والانتقالات...';
-    job.progress = 58;
+    job.progress = 45;
     const bgTrack = await buildBackgroundTrack(segments, bgFiles, workDir);
 
-    // Build captions: large centered ayah text (~55% height), translation + surah name below, glow + stroke
-    const assPath = buildAssFile(segments, workDir, opts.fontSize || 96, showTranslation);
+    // ── Generate text overlay PNGs ──
+    job.message = 'توليد النصوص والزخارف (SVG → PNG)...';
+    job.progress = 55;
+    const { textPaths } = await buildTextOverlays(segments, workDir, 1080, 1920, showTranslation);
 
-    // Compose: burn captions onto the background track, mux with audio
-    job.message = 'تركيب الفيديو والترجمة...';
-    job.progress = 68;
+    // ── Final FFmpeg compose: overlay PNGs with cinematic grading ──
+    job.message = 'تركيب الفيديو والتأثيرات السينمائية... (هذا يستغرق وقتاً)';
+    job.progress = 65;
     const mainClip = path.join(workDir, 'main.mp4');
-    const fontsDir = path.resolve('server/assets/fonts');
-    const vf = `ass=${assPath.replace(/:/g, '\\:')}:fontsdir=${fontsDir.replace(/:/g, '\\:')}`;
-    await run('ffmpeg', [
-      '-y',
-      '-i', bgTrack,
-      '-i', mergedAudio,
-      '-filter_complex', `[0:v]${vf}[v]`,
-      '-map', '[v]', '-map', '1:a',
+
+    const inputsArgs: string[] = ['-y', '-i', bgTrack, '-i', mergedAudio];
+    for (let i = 0; i < segments.length; i++) {
+      inputsArgs.push('-loop', '1', '-t', String(totalAudioDuration), '-i', textPaths[i]);
+    }
+
+    // Build filter_complex
+    let fc = '';
+
+    // Cinematic grading on background
+    fc += `[0:v]eq=contrast=1.05:saturation=1.1:brightness=0.01,vignette=PI/4,format=yuv420p[bg_graded];\n`;
+
+    // ── Generate watermark PNG ──
+    const wmPath = path.join(workDir, 'watermark.png');
+    let wmPng: Buffer;
+    try {
+      const logoBuffer = fs.readFileSync(path.resolve('logo', 'image.webp'));
+      const logoResized = await sharp(logoBuffer).resize(40, 40).png().toBuffer();
+      const logoBase64 = logoResized.toString('base64');
+      // Layout: [text on left] [logo on right]  — total ~280px wide, 50px tall
+      const wmSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="280" height="50">
+        <defs>
+          <filter id="wmshadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="1" stdDeviation="3" flood-color="#000" flood-opacity="0.7"/>
+          </filter>
+        </defs>
+        <g filter="url(#wmshadow)">
+          <image x="235" y="5" width="40" height="40" href="data:image/png;base64,${logoBase64}" />
+          <text x="225" y="32" text-anchor="end" fill="rgba(255,255,255,0.9)" font-family="Arial" font-size="16" font-weight="bold">موقع نور الاسلام</text>
+        </g>
+      </svg>`;
+      wmPng = await sharp(Buffer.from(wmSvg)).png().toBuffer();
+    } catch (e) {
+      // Fallback if logo not found
+      const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="50">
+        <text x="190" y="32" text-anchor="end" fill="rgba(255,255,255,0.9)" font-family="Arial" font-size="16" font-weight="bold">موقع نور الاسلام</text>
+      </svg>`;
+      wmPng = await sharp(Buffer.from(fallbackSvg)).png().toBuffer();
+    }
+    fs.writeFileSync(wmPath, wmPng);
+
+    // Add watermark as an extra input
+    inputsArgs.push('-loop', '1', '-t', String(totalAudioDuration), '-i', wmPath);
+    const wmIdx = 2 + segments.length; // index of the watermark input
+
+    // Overlay text PNGs with crossfade
+    let lastV = 'bg_graded';
+    for (let i = 0; i < segments.length; i++) {
+      const tIdx = 2 + i; // text inputs start after [0:v] and [1:a]
+      const dur = segments[i].end - segments[i].start;
+      const fadeDur = Math.min(0.25, dur / 3);
+      const st = segments[i].start.toFixed(3);
+      const endT = segments[i].end.toFixed(3);
+      const outSt = (segments[i].end - fadeDur).toFixed(3);
+      const fd = fadeDur.toFixed(3);
+
+      fc += `[${tIdx}:v]format=yuva420p,fade=t=in:st=${st}:d=${fd}:alpha=1,fade=t=out:st=${outSt}:d=${fd}:alpha=1[tf${i}];\n`;
+
+      const outLabel = `[to${i}]`;
+      fc += `[${lastV}][tf${i}]overlay=x=0:y=0:format=auto:enable='between(t,${st},${endT})'${outLabel};\n`;
+      lastV = `to${i}`;
+    }
+
+    // Watermark overlay — switching position with fades
+    const midTime = totalAudioDuration / 2;
+    
+    // 1. Top Right Watermark (First Half)
+    const wm1FadeOut = (midTime - 1).toFixed(3);
+    fc += `[${wmIdx}:v]format=yuva420p,fade=t=in:st=0:d=1:alpha=1,fade=t=out:st=${wm1FadeOut}:d=1:alpha=1[wm1];\n`;
+    fc += `[${lastV}][wm1]overlay=W-w-40:40:format=auto[vwithwm1];\n`;
+
+    // 2. Bottom Left Watermark (Second Half)
+    const wm2FadeIn = midTime.toFixed(3);
+    const wm2FadeOut = Math.max(midTime, totalAudioDuration - 1.5).toFixed(3);
+    fc += `[${wmIdx}:v]format=yuva420p,fade=t=in:st=${wm2FadeIn}:d=1:alpha=1,fade=t=out:st=${wm2FadeOut}:d=1.5:alpha=1[wm2];\n`;
+    fc += `[vwithwm1][wm2]overlay=40:H-h-40:format=auto[vfinal];\n`;
+
+    // Remove trailing semicolon and newline
+    fc = fc.replace(/;\n$/, '\n');
+    
+    // Save filter_complex to a script file to avoid Windows command line length limit (Error 4294967274)
+    const fcScriptPath = path.join(workDir, 'filter.txt');
+    fs.writeFileSync(fcScriptPath, fc, 'utf8');
+
+    inputsArgs.push(
+      '-filter_complex_script', fcScriptPath,
+      '-map', `[vfinal]`, '-map', '1:a',
       '-t', String(totalAudioDuration),
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '17',
       '-c:a', 'aac', '-b:a', '192k',
       '-pix_fmt', 'yuv420p',
       '-shortest',
       mainClip,
-    ]);
+    );
+
+    await run(ffmpegPath || 'ffmpeg', inputsArgs);
 
     // Append outro
     job.message = 'إضافة الخاتمة...';
@@ -521,24 +918,72 @@ export async function runGenerateJob(job: Job, opts: GenerateOptions) {
     const outroPath = getOutroPath(opts.outroId);
     if (!outroPath) throw new Error('الخاتمة المحددة غير موجودة');
 
-    // Normalize outro to same format/resolution before concat
+    // Step 1: Combine outro video (no audio) with scaled dimensions
     const outroNorm = path.join(workDir, 'outro-norm.mp4');
     await run('ffmpeg', [
       '-y', '-i', outroPath,
       '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30',
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
-      '-c:a', 'aac', '-b:a', '192k',
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '17',
+      '-an', // Ensure no audio from the outro
       '-pix_fmt', 'yuv420p',
       outroNorm,
     ]);
 
     const mainNorm = path.join(workDir, 'main-norm.mp4');
-    await run('ffmpeg', ['-y', '-i', mainClip, '-vf', 'fps=30', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'aac', '-b:a', '192k', '-pix_fmt', 'yuv420p', mainNorm]);
+    await run('ffmpeg', ['-y', '-i', mainClip, '-vf', 'fps=30', '-c:v', 'libx264', '-preset', 'medium', '-crf', '17', '-c:a', 'aac', '-b:a', '192k', '-pix_fmt', 'yuv420p', mainNorm]);
 
     const finalConcatList = path.join(workDir, 'final-list.txt');
     fs.writeFileSync(finalConcatList, `file '${mainNorm}'\nfile '${outroNorm}'\n`);
     const outputPath = path.join(GENERATED_DIR, `${job.id}.mp4`);
     await run('ffmpeg', ['-y', '-f', 'concat', '-safe', '0', '-i', finalConcatList, '-c', 'copy', outputPath]);
+
+    job.message = 'تجهيز الجودات المتعددة (2K, 720p, 480p)...';
+    job.progress = 90;
+    
+    const out1080 = outputPath;
+    const out2K = path.join(GENERATED_DIR, `${job.id}-2K.mp4`);
+    const out720 = path.join(GENERATED_DIR, `${job.id}-720p.mp4`);
+    const out480 = path.join(GENERATED_DIR, `${job.id}-480p.mp4`);
+
+    // Generate 2K — lanczos upscale + unsharp sharpening for crystal clarity
+    await run('ffmpeg', [
+      '-y', '-i', out1080,
+      '-vf', 'scale=1440:2560:flags=lanczos,unsharp=5:5:0.8:5:5:0.4',
+      '-c:v', 'libx264', '-preset', 'slow', '-crf', '15',
+      '-c:a', 'copy',
+      out2K
+    ]);
+
+    // 720p — good balance of quality and size
+    await run('ffmpeg', [
+      '-y', '-i', out1080,
+      '-vf', 'scale=720:1280:flags=lanczos',
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '21',
+      '-c:a', 'copy',
+      out720
+    ]);
+    
+    // 480p — lightweight for sharing
+    await run('ffmpeg', [
+      '-y', '-i', out1080,
+      '-vf', 'scale=480:854:flags=lanczos',
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+      '-c:a', 'copy',
+      out480
+    ]);
+
+    const stat2K = fs.statSync(out2K).size / (1024 * 1024);
+    const stat1080 = fs.statSync(out1080).size / (1024 * 1024);
+    const stat720 = fs.statSync(out720).size / (1024 * 1024);
+    const stat480 = fs.statSync(out480).size / (1024 * 1024);
+
+    job.resultFile = out1080;
+    job.outputs = [
+      { quality: '2K', path: out2K, sizeMb: Number(stat2K.toFixed(1)) },
+      { quality: '1080p', path: out1080, sizeMb: Number(stat1080.toFixed(1)) },
+      { quality: '720p', path: out720, sizeMb: Number(stat720.toFixed(1)) },
+      { quality: '480p', path: out480, sizeMb: Number(stat480.toFixed(1)) },
+    ];
 
     job.status = 'done';
     job.progress = 100;

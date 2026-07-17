@@ -10,7 +10,7 @@ export default {
     extend: {
       fontFamily: {
         sans: ['"Noto Kufi Arabic"', 'sans-serif'],
-        quran: ['"Amiri"', 'serif'],
+        quran: ['"Uthmanic"', 'serif'],
       },
       colors: {
         emerald: { 500: '#10b981', 600: '#059669' },

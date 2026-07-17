@@ -1,11 +1,10 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'motion/react';
-import { Search, ArrowRight, Copy, Check, RotateCcw, Heart, BookOpen, Sun, Moon, Star, Sparkles, Coffee, Moon as MoonIcon, Brain, Home, Plane, Volume2, ChevronRight, ChevronLeft, Award, CheckCircle2, Smile, Shield, Users, MessageCircle, Cloud, CloudRain, Syringe, FileText, Calendar, Camera, BadgeCheck, Loader2, Trophy, BookOpenCheck, Zap } from 'lucide-react';
+import { Search, ArrowRight, Copy, Check, RotateCcw, Heart, BookOpen, Sun, Moon, Star, Sparkles, Coffee, Moon as MoonIcon, Brain, Home, Plane, Volume2, ChevronRight, ChevronLeft, Award, CheckCircle2, Smile, Shield, Users, MessageCircle, Cloud, CloudRain, Syringe, FileText, Calendar, Camera, BadgeCheck, Loader2, Trophy, BookOpenCheck, Zap, Play, Pause } from 'lucide-react';
 import { challengeService, AzkarType, AZKAR_TYPES } from '../services/challengeService';
 
-interface AzkarCategory { ID: number; TITLE: string; AUDIO_URL: string; TEXT: string; }
-interface AzkarItem { ID: number; ARABIC_TEXT: string; LANGUAGE_ARABIC_TRANSLATED?: string; TRANSLATED_TEXT?: string; REPEAT: number; AUDIO?: string; }
+interface AzkarItem { id: number; text: string; count: number; audio: string; filename: string; }
+interface AzkarCategory { id: number; category: string; audio: string; filename: string; array: AzkarItem[]; }
 
 const formatArabic = (text: string) => {
     return text.replace(/\*/g, ' ﴿﴾ ');
@@ -100,10 +99,12 @@ const getAzkarTypeFromTitle = (title: string): AzkarType | null => {
     if (title.includes('الصباح') || title.includes('الصَّباح')) return 'morning';
     if (title.includes('المساء') || title.includes('المَساء')) return 'evening';
     if (title.includes('النوم') || title.includes('النَّوم')) return 'sleep';
-    if (title.includes('بعد الصلاة') || title.includes('الصلاة')) return 'post_prayer';
-    if (title.includes('الرقية') || title.includes('الرُّقي')) return 'ruqya';
+    if (title.includes('بعد الصلاة') || title.includes('بعد السلام')) return 'post_prayer';
+    if (title.includes('الرقية') || title.includes('الرُّقي') || title.includes('المرض')) return 'ruqya';
     return null;
 };
+
+const BASE_AUDIO_URL = 'https://raw.githubusercontent.com/Alsarmad/Adhkar-json/main';
 
 export const Azkar: React.FC<{ session?: any }> = ({ session }) => {
     const [activeTab, setActiveTab] = useState('azkar');
@@ -122,11 +123,15 @@ export const Azkar: React.FC<{ session?: any }> = ({ session }) => {
         post_prayer: { completed: false, itemsCount: 0 },
         ruqya: { completed: false, itemsCount: 0 },
     });
-    const [recordingItem, setRecordingItem] = useState<number | null>(null);
-    const [lastCategoryCompletion, setLastCategoryCompletion] = useState<{ type: AzkarType; completed: number; total: number } | null>(null);
+    
+    // Audio States
+    const [playingGlobalAudio, setPlayingGlobalAudio] = useState(false);
+    const [playingItemAudio, setPlayingItemAudio] = useState<number | null>(null);
+    const globalAudioRef = useRef<HTMLAudioElement | null>(null);
+    const itemAudioRef = useRef<HTMLAudioElement | null>(null);
+
     const [celebration, setCelebration] = useState<{ show: boolean; title: string; reward: number; pointsAdded: number } | null>(null);
 
-    const [dhikrIdx, setDhikrIdx] = useState(0);
     const [tasbihCount, setTasbihCount] = useState(0);
     const [tasbihTarget, setTasbihTarget] = useState(33);
     const [tasbihLap, setTasbihLap] = useState(0);
@@ -137,14 +142,24 @@ export const Azkar: React.FC<{ session?: any }> = ({ session }) => {
     const [todayTasbeeh, setTodayTasbeeh] = useState(0);
     const [recordingTasbeeh, setRecordingTasbeeh] = useState(false);
 
-    // تحميل إجمالي التسبيح اليومي عند فتح تبويب التسبيح
+    // Stop audio when changing categories or tabs
+    useEffect(() => {
+        if (globalAudioRef.current) {
+            globalAudioRef.current.pause();
+            setPlayingGlobalAudio(false);
+        }
+        if (itemAudioRef.current) {
+            itemAudioRef.current.pause();
+            setPlayingItemAudio(null);
+        }
+    }, [selectedCategory, activeTab]);
+
     useEffect(() => {
         if (activeTab === 'tasbih' && session?.user) {
             challengeService.getTasbeehDailyProgress(session.user.id).then(setTodayTasbeeh).catch(() => {});
         }
     }, [activeTab, session]);
 
-    // التنقل التلقائي عند إكمال الذكر
     const goNext = useCallback(() => {
         if (selectedCategory && currentItemIdx < azkarContent.length - 1) {
             setCurrentItemIdx(i => i + 1);
@@ -167,10 +182,9 @@ export const Azkar: React.FC<{ session?: any }> = ({ session }) => {
         }).catch(() => {});
     }, [session]);
 
-    // تحديث التقدم عند فتح قسم جديد
     useEffect(() => {
         if (!session?.user || !selectedCategory) return;
-        const catType = getAzkarTypeFromTitle(selectedCategory.TITLE);
+        const catType = getAzkarTypeFromTitle(selectedCategory.category);
         if (!catType) return;
         challengeService.getAzkarDailyProgress(session.user.id).then(res => {
             setAzkarProgress(p => ({
@@ -181,57 +195,80 @@ export const Azkar: React.FC<{ session?: any }> = ({ session }) => {
                 }
             }));
         }).catch(() => {});
-    }, [selectedCategory?.ID]);
+    }, [selectedCategory?.id]);
 
     const fetchCategories = async () => {
         try { setLoading(true);
-            const res = await fetch('https://www.hisnmuslim.com/api/ar/husn_ar.json');
+            const res = await fetch('/data/adhkar.json');
             const data = await res.json();
-            setCategories(data['العربية'] || []);
+            setCategories(data || []);
         } catch (e) { console.error(e); }
         finally { setLoading(false); }
     };
 
     const fetchAzkarContent = async (cat: AzkarCategory) => {
-        try { setLoading(true); setSelectedCategory(cat); setCurrentItemIdx(0);
-            const res = await fetch(cat.TEXT.replace('http://', 'https://'));
-            const data = await res.json();
-            const key = Object.keys(data)[0];
-            setAzkarContent(data[key] || []); setCounts({});
-        } catch (e) { console.error(e); }
-        finally { setLoading(false); }
+        setSelectedCategory(cat); 
+        setCurrentItemIdx(0);
+        setAzkarContent(cat.array || []); 
+        setCounts({});
+    };
+
+    const toggleGlobalAudio = () => {
+        if (!globalAudioRef.current || !selectedCategory?.audio) return;
+        if (playingItemAudio !== null && itemAudioRef.current) {
+            itemAudioRef.current.pause();
+            setPlayingItemAudio(null);
+        }
+        if (playingGlobalAudio) {
+            globalAudioRef.current.pause();
+            setPlayingGlobalAudio(false);
+        } else {
+            globalAudioRef.current.src = BASE_AUDIO_URL + selectedCategory.audio;
+            globalAudioRef.current.play();
+            setPlayingGlobalAudio(true);
+        }
+    };
+
+    const toggleItemAudio = (item: AzkarItem) => {
+        if (!itemAudioRef.current || !item.audio) return;
+        if (playingGlobalAudio && globalAudioRef.current) {
+            globalAudioRef.current.pause();
+            setPlayingGlobalAudio(false);
+        }
+        if (playingItemAudio === item.id) {
+            itemAudioRef.current.pause();
+            setPlayingItemAudio(null);
+        } else {
+            itemAudioRef.current.src = BASE_AUDIO_URL + item.audio;
+            itemAudioRef.current.play();
+            setPlayingItemAudio(item.id);
+        }
     };
 
     const handleIncrement = (id: number, goal: number) => {
-        // نقرأ العداد الحالي لتحديد إن كنا سنكمل الذكر
         const curCount = counts[id] || 0;
         if (curCount >= goal) return;
 
-        // 1. نحدث العداد فوراً
         setCounts(prev => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
 
-        // 2. إذا أكملنا الذكر، نسجل فوراً في قاعدة البيانات (لا ننتظر setCounts)
         const newCount = curCount + 1;
         if (newCount >= goal && session?.user && selectedCategory) {
-            const catType = getAzkarTypeFromTitle(selectedCategory.TITLE);
+            const catType = getAzkarTypeFromTitle(selectedCategory.category);
             if (catType && !azkarProgress[catType].completed) {
-                // تسجيل الذكر الفردي فوراً - fire-and-forget مع معالجة الأخطاء
                 challengeService.recordAzkarItem(
                     session.user.id,
                     catType,
                     id,
-                    { category_title: selectedCategory.TITLE }
+                    { category_title: selectedCategory.category }
                 );
-                // نحدث عدد الأذكار المسجلة محلياً
                 setAzkarProgress(p => ({
                     ...p,
                     [catType]: { ...p[catType], itemsCount: p[catType].itemsCount + 1 }
                 }));
-                // تحقق من إكمال كل الأذكار في هذه الفئة
                 const allCompleted = azkarContent.every(i => {
-                    const c = counts[i.ID] || 0;
-                    const add = i.ID === id ? 1 : 0;
-                    return (c + add) >= (i.REPEAT || 1);
+                    const c = counts[i.id] || 0;
+                    const add = i.id === id ? 1 : 0;
+                    return (c + add) >= (i.count || 1);
                 });
                 if (allCompleted && !azkarProgress[catType].completed) {
                     challengeService.recordAzkarCompletion(session.user.id, catType).then(res => {
@@ -244,7 +281,6 @@ export const Azkar: React.FC<{ session?: any }> = ({ session }) => {
                 }
             }
         }
-
         if (navigator.vibrate) navigator.vibrate(8);
     };
 
@@ -253,23 +289,22 @@ export const Azkar: React.FC<{ session?: any }> = ({ session }) => {
         setCopiedId(id); setTimeout(() => setCopiedId(null), 2000);
     };
 
-    const filtered = categories.filter(c => c.TITLE.includes(searchQuery));
+    const filtered = categories.filter(c => c.category.includes(searchQuery));
 
     // ===== DETAIL VIEW =====
     if (selectedCategory) {
         const item = azkarContent[currentItemIdx];
         const isFirst = currentItemIdx === 0;
         const isLast = currentItemIdx === azkarContent.length - 1;
-        const completedItems = azkarContent.filter(i => (counts[i.ID] || 0) >= (i.REPEAT || 1)).length;
+        const completedItems = azkarContent.filter(i => (counts[i.id] || 0) >= (i.count || 1)).length;
         const total = azkarContent.length;
         const progress = total > 0 ? (completedItems / total) * 100 : 0;
-        const azkarType = getAzkarTypeFromTitle(selectedCategory.TITLE);
+        const azkarType = getAzkarTypeFromTitle(selectedCategory.category);
         const categoryCompletedToday = azkarType ? azkarProgress[azkarType].completed : false;
-        const currentCount = item ? (counts[item.ID] || 0) : 0;
-        const repGoal = item?.REPEAT || 1;
+        const currentCount = item ? (counts[item.id] || 0) : 0;
+        const repGoal = item?.count || 1;
         const isItemComplete = currentCount >= repGoal;
 
-        // لمّستا للسحب (swipe) للتنقل
         const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientX; };
         const handleTouchEnd = (e: React.TouchEvent) => {
             const diff = e.changedTouches[0].clientX - touchStartX.current;
@@ -280,6 +315,11 @@ export const Azkar: React.FC<{ session?: any }> = ({ session }) => {
         return (
             <div className="w-full max-w-2xl mx-auto px-4 pb-32 space-y-3"
                 onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+                
+                {/* Global Audio Element */}
+                <audio ref={globalAudioRef} onEnded={() => setPlayingGlobalAudio(false)} />
+                <audio ref={itemAudioRef} onEnded={() => setPlayingItemAudio(null)} />
+
                 {/* الشريط العلوي */}
                 <div className="sticky top-3 z-50">
                     <div className="bg-[#0f172a]/95 backdrop-blur-xl border border-white/5 rounded-2xl p-2.5 flex items-center justify-between gap-2 shadow-xl">
@@ -288,25 +328,21 @@ export const Azkar: React.FC<{ session?: any }> = ({ session }) => {
                             <ArrowRight size={18} />
                         </button>
                         <div className="flex-1 text-center min-w-0 px-2">
-                            <p className="text-xs md:text-sm font-bold text-white truncate">{selectedCategory.TITLE}</p>
-                            <p className="text-[8px] md:text-[9px] text-gray-500 font-medium">
+                            <p className="text-xs md:text-sm font-bold text-white truncate">{selectedCategory.category}</p>
+                            <p className="text-[8px] md:text-[9px] text-gray-500 font-medium mt-0.5">
                                 {categoryCompletedToday ? '✅ مكتمل اليوم' : `${completedItems}/${total}`}
                             </p>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
-                            {!categoryCompletedToday && (
-                                <>
-                                    <button onClick={() => setCurrentItemIdx(i => Math.max(0, i - 1))} disabled={isFirst}
-                                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all
-                                            ${isFirst ? 'opacity-20 cursor-not-allowed' : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white'}`}>
-                                        <ChevronRight size={16} />
-                                    </button>
-                                    <button onClick={() => setCurrentItemIdx(i => Math.min(total - 1, i + 1))} disabled={isLast}
-                                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all
-                                            ${isLast ? 'opacity-20 cursor-not-allowed' : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white'}`}>
-                                        <ChevronLeft size={16} />
-                                    </button>
-                                </>
+                            {/* Global Audio Play Button */}
+                            {selectedCategory.audio && (
+                                <button onClick={toggleGlobalAudio}
+                                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all active:scale-90 shadow-lg border
+                                        ${playingGlobalAudio 
+                                            ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-500/30' 
+                                            : 'bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-emerald-300 border-white/5'}`}>
+                                    {playingGlobalAudio ? <Pause size={16} /> : <Volume2 size={16} />}
+                                </button>
                             )}
                             <div className="w-9 h-9 flex items-center justify-center relative shrink-0">
                                 {categoryCompletedToday ? (
@@ -341,24 +377,18 @@ export const Azkar: React.FC<{ session?: any }> = ({ session }) => {
                     <div className="text-center py-20 text-gray-500 text-sm font-bold">لا توجد أذكار في هذا القسم</div>
                 ) : item && (
                     <div className="space-y-3">
-                        {/* بطاقة الذكر - المساحة كلها قابلة للنقر للتكبير */}
-                        <div onClick={() => !isItemComplete && handleIncrement(item.ID, repGoal)}
-                            className={`bg-[#1e293b]/60 border rounded-2xl md:rounded-3xl overflow-hidden shadow-lg transition-all duration-300 select-none
+                        {/* بطاقة الذكر */}
+                        <div onClick={() => !isItemComplete && handleIncrement(item.id, repGoal)}
+                            className={`bg-[#1e293b]/60 border rounded-2xl md:rounded-3xl overflow-hidden shadow-lg transition-all duration-300 select-none relative
                                 ${isItemComplete ? 'border-emerald-500/30' : 'border-white/5 active:scale-[0.99] cursor-pointer'}`}>
+                            
                             <div className="p-5 md:p-8 space-y-5 md:space-y-6">
                                 {/* النص العربي */}
-                                <div className="text-center">
+                                <div className="text-center pt-2">
                                     <p className="font-quran text-xl md:text-3xl leading-[2.5] md:leading-[2.8] text-white/90" dir="rtl">
-                                        {formatArabic(item.ARABIC_TEXT)}
+                                        {formatArabic(item.text)}
                                     </p>
                                 </div>
-
-                                {/* الترجمة */}
-                                {item.TRANSLATED_TEXT && (
-                                    <div className="bg-black/30 rounded-xl p-3 md:p-4 border border-white/5">
-                                        <p className="text-gray-400 text-[10px] md:text-sm leading-relaxed text-center">{item.TRANSLATED_TEXT}</p>
-                                    </div>
-                                )}
 
                                 {/* العداد الكبير - زر النقر الأساسي */}
                                 <div className="flex flex-col items-center gap-3">
@@ -385,16 +415,16 @@ export const Azkar: React.FC<{ session?: any }> = ({ session }) => {
                                             {[1, 3, 7, repGoal].filter((v, i, a) => a.indexOf(v) === i).map(goal => (
                                                 <button key={goal} onClick={(e) => {
                                                     e.stopPropagation();
-                                                    const cur = counts[item.ID] || 0;
-                                                    if (goal === 1) { handleIncrement(item.ID, repGoal); return; }
+                                                    const cur = counts[item.id] || 0;
+                                                    if (goal === 1) { handleIncrement(item.id, repGoal); return; }
                                                     const remaining = repGoal - cur;
                                                     const toCount = Math.min(goal, remaining);
                                                     if (toCount > 0) {
-                                                        setCounts(prev => ({ ...prev, [item.ID]: cur + toCount }));
+                                                        setCounts(prev => ({ ...prev, [item.id]: cur + toCount }));
                                                         if (cur + toCount >= repGoal && session?.user && selectedCategory) {
-                                                            const catType = getAzkarTypeFromTitle(selectedCategory.TITLE);
+                                                            const catType = getAzkarTypeFromTitle(selectedCategory.category);
                                                             if (catType && !azkarProgress[catType].completed) {
-                                                                challengeService.recordAzkarItem(session.user.id, catType, item.ID, { category_title: selectedCategory.TITLE });
+                                                                challengeService.recordAzkarItem(session.user.id, catType, item.id, { category_title: selectedCategory.category });
                                                                 setAzkarProgress(p => ({ ...p, [catType]: { ...p[catType], itemsCount: p[catType].itemsCount + 1 } }));
                                                             }
                                                         }
@@ -411,14 +441,21 @@ export const Azkar: React.FC<{ session?: any }> = ({ session }) => {
                                     )}
                                 </div>
 
-                                {/* أزرار إضافية صغيرة (نسخ، إعادة) */}
+                                {/* أزرار إضافية صغيرة (صوت، نسخ، إعادة) */}
                                 <div className="flex items-center justify-center gap-2">
-                                    <button onClick={(e) => { e.stopPropagation(); handleCopy(item.ARABIC_TEXT, item.ID); }}
-                                        className={`p-2 rounded-lg transition-all active:scale-90 ${copiedId === item.ID ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-gray-500 hover:text-white hover:bg-white/10'}`}>
-                                        {copiedId === item.ID ? <Check size={12} /> : <Copy size={12} />}
+                                    {/* Play Item Audio */}
+                                    {item.audio && (
+                                        <button onClick={(e) => { e.stopPropagation(); toggleItemAudio(item); }}
+                                            className={`p-2 rounded-lg transition-all active:scale-90 ${playingItemAudio === item.id ? 'bg-emerald-500 text-white' : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'}`}>
+                                            {playingItemAudio === item.id ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
+                                        </button>
+                                    )}
+                                    <button onClick={(e) => { e.stopPropagation(); handleCopy(item.text, item.id); }}
+                                        className={`p-2 rounded-lg transition-all active:scale-90 ${copiedId === item.id ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-gray-500 hover:text-white hover:bg-white/10'}`}>
+                                        {copiedId === item.id ? <Check size={12} /> : <Copy size={12} />}
                                     </button>
                                     {currentCount > 0 && !isItemComplete && (
-                                        <button onClick={(e) => { e.stopPropagation(); setCounts(p => { const n = { ...p }; delete n[item.ID]; return n; }); }}
+                                        <button onClick={(e) => { e.stopPropagation(); setCounts(p => { const n = { ...p }; delete n[item.id]; return n; }); }}
                                             className="p-2 rounded-lg bg-white/5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-all active:scale-90">
                                             <RotateCcw size={12} />
                                         </button>
@@ -566,19 +603,55 @@ export const Azkar: React.FC<{ session?: any }> = ({ session }) => {
                     ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 md:gap-3">
                             {filtered.map(cat => {
-                                const icons = [Sun, Moon, CheckCircle2, BookOpen, Heart, Star, Coffee, Brain, Shield, Users, MessageCircle, Cloud, CloudRain, Home, Plane, Smile, Camera, FileText, Calendar, Syringe];
-                                const Icon = icons[cat.ID % icons.length];
+                                const getIconForCategory = (name: string) => {
+                                    if (name.includes('الصباح') || name.includes('المساء')) return Sun;
+                                    if (name.includes('النوم') || name.includes('الاستيقاظ') || name.includes('تقلب ليلا') || name.includes('الفزع في النوم')) return Moon;
+                                    if (name.includes('الخلاء') || name.includes('الوضوء')) return CheckCircle2;
+                                    if (name.includes('المنزل') || name.includes('البيت')) return Home;
+                                    if (name.includes('المسجد') || name.includes('الآذان')) return BookOpen;
+                                    if (name.includes('الصلاة') || name.includes('الاستفتاح') || name.includes('الركوع') || name.includes('السجود') || name.includes('التشهد') || name.includes('السلام من الصلاة') || name.includes('الوتر') || name.includes('قنوت')) return Star;
+                                    if (name.includes('الثوب') || name.includes('لبس')) return Smile;
+                                    if (name.includes('الطعام') || name.includes('الشراب') || name.includes('إفطار') || name.includes('الصائم') || name.includes('الثمر')) return Coffee;
+                                    if (name.includes('السفر') || name.includes('المسافر') || name.includes('المركوب') || name.includes('الركوب') || name.includes('السوق') || name.includes('القرية') || name.includes('الرجوع')) return Plane;
+                                    if (name.includes('المريض') || name.includes('عيادة') || name.includes('وجع') || name.includes('الشفاء')) return Heart;
+                                    if (name.includes('الميت') || name.includes('القبر') || name.includes('دفن') || name.includes('المحتضر') || name.includes('مصيبة') || name.includes('التعزية') || name.includes('الجنا')) return Shield;
+                                    if (name.includes('الريح') || name.includes('الرعد') || name.includes('المطر') || name.includes('الاستسقاء') || name.includes('الاستصحاء')) return CloudRain;
+                                    if (name.includes('الهلال')) return Moon;
+                                    if (name.includes('الهم') || name.includes('الحزن') || name.includes('الكرب') || name.includes('استصعب')) return Heart;
+                                    if (name.includes('العدو') || name.includes('السلطان') || name.includes('خاف') || name.includes('الشيطان') || name.includes('الدجال') || name.includes('مردة')) return Shield;
+                                    if (name.includes('الوسوسة') || name.includes('الإيمان')) return Brain;
+                                    if (name.includes('الدين') || name.includes('قضاء')) return FileText;
+                                    if (name.includes('المتزوج') || name.includes('الزوجة') || name.includes('المولود') || name.includes('الأولاد')) return Heart;
+                                    if (name.includes('الغضب')) return Shield;
+                                    if (name.includes('المجلس') || name.includes('كفارة')) return Users;
+                                    if (name.includes('معروف') || name.includes('أحبك') || name.includes('بارك') || name.includes('غفر') || name.includes('أقرض') || name.includes('ماله')) return MessageCircle;
+                                    if (name.includes('العطاس')) return Smile;
+                                    if (name.includes('الحج') || name.includes('العمرة') || name.includes('عرفة') || name.includes('الصفا') || name.includes('المروة') || name.includes('الجمار') || name.includes('الحرام') || name.includes('الأسود')) return Star;
+                                    if (name.includes('التسبيح') || name.includes('التحميد') || name.includes('التهليل') || name.includes('التكبير') || name.includes('يسبح')) return Sparkles;
+                                    if (name.includes('الاستغفار') || name.includes('التوبة') || name.includes('أذنب')) return CheckCircle2;
+                                    if (name.includes('النبي') || name.includes('السلام')) return BookOpen;
+                                    if (name.includes('الشرك') || name.includes('الطيرة')) return Shield;
+                                    if (name.includes('الذبح') || name.includes('النحر')) return Calendar;
+                                    if (name.includes('بعينه') || name.includes('مبتلى')) return Shield;
+                                    if (name.includes('يسره') || name.includes('التعجب') || name.includes('السار')) return Sparkles;
+                                    if (name.includes('الخير') || name.includes('الآداب')) return BookOpen;
+                                    if (name.includes('الكافر')) return MessageCircle;
+                                    if (name.includes('الديك') || name.includes('الكلاب') || name.includes('الحمار')) return Cloud;
+                                    if (name.includes('سببته') || name.includes('مدح') || name.includes('زكي')) return MessageCircle;
+                                    return BookOpen;
+                                };
+                                const Icon = getIconForCategory(cat.category);
                                 return (
-                                    <button key={cat.ID} onClick={() => fetchAzkarContent(cat)}
+                                    <button key={cat.id} onClick={() => fetchAzkarContent(cat)}
                                         className="group bg-[#1e293b]/30 hover:bg-[#1e293b]/60 border border-white/5 hover:border-emerald-500/20 p-3.5 md:p-5 rounded-xl md:rounded-2xl transition-all duration-300 active:scale-[0.98] text-right flex items-center gap-3 md:gap-4 shadow-sm">
                                         <div className="w-10 h-10 md:w-12 md:h-12 bg-white/5 rounded-xl md:rounded-2xl flex items-center justify-center text-emerald-500/60 group-hover:text-emerald-400 group-hover:scale-110 transition-all shrink-0">
                                             <Icon size={18} className="md:w-5 md:h-5" />
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <h3 className="text-xs md:text-sm font-bold text-gray-200 group-hover:text-white transition-colors truncate">{cat.TITLE}</h3>
+                                            <h3 className="text-xs md:text-sm font-bold text-gray-200 group-hover:text-white transition-colors truncate">{cat.category}</h3>
                                             <p className="text-[8px] md:text-[9px] text-gray-600 font-medium mt-0.5">
                                                 {(() => {
-                                                    const tp = getAzkarTypeFromTitle(cat.TITLE);
+                                                    const tp = getAzkarTypeFromTitle(cat.category);
                                                     if (tp && azkarProgress[tp].completed) return '✅ مكتمل اليوم';
                                                     if (tp && azkarProgress[tp].itemsCount > 0) return `📖 تم ${azkarProgress[tp].itemsCount} أذكار`;
                                                     return 'اضغط للقراءة';
@@ -586,7 +659,7 @@ export const Azkar: React.FC<{ session?: any }> = ({ session }) => {
                                             </p>
                                         </div>
                                         {(() => {
-                                            const tp = getAzkarTypeFromTitle(cat.TITLE);
+                                            const tp = getAzkarTypeFromTitle(cat.category);
                                             if (tp && azkarProgress[tp].completed) return <BadgeCheck size={16} className="text-emerald-400 shrink-0" />;
                                             return <ChevronRight size={14} className="text-gray-600 group-hover:text-emerald-500 group-hover:-translate-x-1 transition-all shrink-0" />;
                                         })()}

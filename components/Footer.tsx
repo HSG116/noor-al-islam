@@ -43,7 +43,7 @@ const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
                     className="mb-12 w-full max-w-md"
                 >
                     <a
-                        href="/noor_al_islam.apk"
+                        href="noor_al_islam.apk"
                         download
                         className="group relative flex items-center justify-center gap-4 bg-gradient-to-br from-emerald-600 to-teal-700 p-5 rounded-3xl shadow-2xl shadow-emerald-500/20 overflow-hidden transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
                     >
@@ -63,6 +63,10 @@ const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
                             v1.0.0
                         </div>
                     </a>
+                    <p className="text-center text-[10px] text-gray-500 mt-3 font-medium">
+                        ملاحظة: قد تظهر رسالة أمان (مثل Play Protect أو المتصفح) تحذر من تحميل ملف APK.
+                        <br />هذا طبيعي جداً لأن التطبيق يُحمل من خارج متجر جوجل بلاي، ويمكنك اختيار "التنزيل على أي حال".
+                    </p>
                 </motion.div>
 
                 {/* Legal Links Section */}
