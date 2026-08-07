@@ -194,6 +194,14 @@ export const MosqueFinder: React.FC = () => {
             script.id = scriptId;
             script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
             script.onload = init;
+            script.onerror = () => {
+                const s2 = document.createElement('script');
+                s2.id = scriptId;
+                s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+                s2.onload = init;
+                document.head.appendChild(s2);
+                link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+            };
             document.head.appendChild(script);
         } else {
             const check = setInterval(() => {
@@ -214,11 +222,15 @@ export const MosqueFinder: React.FC = () => {
             zoomSnap: 0.5,
             wheelPxPerZoomLevel: 60
         }).setView([24.7136, 46.6753], 14);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+        const tiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+        tiles.on('tileerror', () => {
+            if ((window as any).__mosqueTileFallback) return;
+            (window as any).__mosqueTileFallback = true;
+            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+        });
         leafletMap.current = map;
         setTimeout(() => map.invalidateSize(), 200);
         setMapReady(true);
-        locateUser();
     };
 
     const locateUser = () => {
@@ -236,27 +248,27 @@ export const MosqueFinder: React.FC = () => {
             setLocating(false);
         };
 
-        const fallbackToIp = () => {
-            fetch('https://ipwho.is/')
-                .then((r) => (r.ok ? r.json() : Promise.reject()))
-                .then((ip) => {
-                    const lat = parseFloat(ip.latitude);
-                    const lon = parseFloat(ip.longitude);
-                    if (!isNaN(lat) && !isNaN(lon)) fetchAt([lat, lon], false);
-                    else fetchAt([24.7136, 46.6753], false);
-                })
-                .catch(() => fetchAt([24.7136, 46.6753], false));
-        };
+        // Start immediately with IP location (~1s) so mosques appear fast,
+        // then upgrade to precise GPS when it resolves.
+        fetch('https://ipwho.is/')
+            .then((r) => (r.ok ? r.json() : Promise.reject()))
+            .then((ip) => {
+                const lat = parseFloat(ip.latitude);
+                const lon = parseFloat(ip.longitude);
+                if (!isNaN(lat) && !isNaN(lon)) fetchAt([lat, lon], false);
+                else fetchAt([24.7136, 46.6753], false);
+            })
+            .catch(() => fetchAt([24.7136, 46.6753], false));
 
-        if (!navigator.geolocation) { fallbackToIp(); return; }
-        // Fast + battery friendly: WiFi/cell accuracy (~50m) instead of GPS high-accuracy
-        // which takes 5-15s and freezes phones.
+        if (!navigator.geolocation) return;
         navigator.geolocation.getCurrentPosition(
             (pos) => fetchAt([pos.coords.latitude, pos.coords.longitude], true),
-            () => { fallbackToIp(); },
+            () => { /* IP location already shown */ },
             { enableHighAccuracy: false, timeout: 7000, maximumAge: 60000 }
         );
     };
+
+    useEffect(() => { locateUser(); }, []);
 
     useEffect(() => {
         if (!userPos) return;
@@ -291,6 +303,25 @@ export const MosqueFinder: React.FC = () => {
         setSelectedId(null);
         const token = ++fetchTokenRef.current;
         const [lat, lon] = coords;
+
+        // Show cached results instantly on revisits while fresh data loads.
+        const saveCache = (els: any[]) => {
+            try {
+                localStorage.setItem(`mosque-finder-cache-${r}`, JSON.stringify({ ts: Date.now(), lat, lon, mosques: els.slice(0, 250) }));
+            } catch { /* storage full/blocked */ }
+        };
+        try {
+            const raw = localStorage.getItem(`mosque-finder-cache-${r}`);
+            if (raw) {
+                const cache = JSON.parse(raw);
+                if (cache?.mosques?.length && cache.lat != null && cache.lon != null
+                    && Date.now() - cache.ts < 12 * 3600 * 1000
+                    && Math.abs(cache.lat - lat) < 0.5 && Math.abs(cache.lon - lon) < 0.5) {
+                    setMosques(cache.mosques);
+                }
+            }
+        } catch { /* ignore */ }
+
         const dist = r * 1000;
         const queryMeters = Math.min(dist, 15000);
         const query = `[out:json][timeout:30];(
@@ -307,7 +338,7 @@ export const MosqueFinder: React.FC = () => {
         };
 
         const fromOverpass = firstSuccess(OVERPASS_MIRRORS.map(async (mirror): Promise<{ source: 'overpass'; data: any }> => {
-            const res = await fetch(`${mirror}?data=${encodeURIComponent(query)}`, { signal: makeAbortable(30000).signal });
+            const res = await fetch(`${mirror}?data=${encodeURIComponent(query)}`, { signal: makeAbortable(18000).signal });
             if (!res.ok) throw new Error(`status ${res.status}`);
             const data = await res.json();
             if (!data?.elements || data.elements.length === 0) throw new Error('empty result');
@@ -315,7 +346,7 @@ export const MosqueFinder: React.FC = () => {
         }));
 
         const photonQuery = (q: string) =>
-            fetch(`https://photon.komoot.io/api/?q=${q}&lat=${lat}&lon=${lon}&limit=100`, { signal: makeAbortable(10000).signal })
+            fetch(`https://photon.komoot.io/api/?q=${q}&lat=${lat}&lon=${lon}&limit=100`, { signal: makeAbortable(6000).signal })
                 .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`status ${res.status}`))));
         const fromPhoton = Promise.all([photonQuery('mosque'), photonQuery(encodeURIComponent('مسجد'))])
             .then(([a, b]) => {
@@ -387,7 +418,7 @@ export const MosqueFinder: React.FC = () => {
             .then((ph) => {
                 if (token !== fetchTokenRef.current) return;
                 const els = mapPhoton(ph.data.features);
-                if (els.length > 0) setMosques(els);
+                if (els.length > 0) { setMosques(els); saveCache(els); }
                 setLoading(false);
             })
             .catch(() => {
@@ -400,7 +431,7 @@ export const MosqueFinder: React.FC = () => {
             .then((op) => {
                 if (token !== fetchTokenRef.current) return;
                 const els = mapOverpass(op.data.elements);
-                if (els.length > 0) setMosques(els);
+                if (els.length > 0) { setMosques(els); saveCache(els); }
                 setLoading(false);
             })
             .catch(() => {
