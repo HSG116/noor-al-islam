@@ -238,6 +238,7 @@ export const MosqueFinder: React.FC = () => {
         setLoading(true);
         setErrorMsg(null);
 
+        let gpsDone = false;
         const fetchAt = (coords: [number, number], accurate: boolean) => {
             setUserPos(coords);
             setUsingIpLocation(!accurate);
@@ -248,22 +249,28 @@ export const MosqueFinder: React.FC = () => {
             setLocating(false);
         };
 
-        // Start immediately with IP location (~1s) so mosques appear fast,
-        // then upgrade to precise GPS when it resolves.
+        // GPS is authoritative. IP location is only a provisional fast display
+        // and must NEVER override a real GPS fix (which may arrive later).
         fetch('https://ipwho.is/')
             .then((r) => (r.ok ? r.json() : Promise.reject()))
             .then((ip) => {
+                if (gpsDone) return;
                 const lat = parseFloat(ip.latitude);
                 const lon = parseFloat(ip.longitude);
                 if (!isNaN(lat) && !isNaN(lon)) fetchAt([lat, lon], false);
                 else fetchAt([24.7136, 46.6753], false);
             })
-            .catch(() => fetchAt([24.7136, 46.6753], false));
+            .catch(() => {
+                if (!gpsDone) fetchAt([24.7136, 46.6753], false);
+            });
 
         if (!navigator.geolocation) return;
         navigator.geolocation.getCurrentPosition(
-            (pos) => fetchAt([pos.coords.latitude, pos.coords.longitude], true),
-            () => { /* IP location already shown */ },
+            (pos) => {
+                gpsDone = true;
+                fetchAt([pos.coords.latitude, pos.coords.longitude], true);
+            },
+            () => { /* keep the provisional IP location */ },
             { enableHighAccuracy: false, timeout: 7000, maximumAge: 60000 }
         );
     };
@@ -568,6 +575,13 @@ export const MosqueFinder: React.FC = () => {
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
                     <span>{errorMsg}</span>
                     <button onClick={locateUser} className="mr-auto shrink-0 px-3 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-200 transition-all">إعادة المحاولة</button>
+                </div>
+            )}
+
+            {usingIpLocation && !errorMsg && (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[10px] md:text-xs font-bold max-w-2xl mx-auto">
+                    <LocateFixed size={13} />
+                    <span>موقع تقريبي عبر الإنترنت — يتم تحديث المساجد تلقائياً عند تحديد موقعك بدقة</span>
                 </div>
             )}
 
