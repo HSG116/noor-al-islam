@@ -265,12 +265,12 @@ export const MosqueFinder: React.FC = () => {
     }, [radius]);
 
     const OVERPASS_MIRRORS = [
+        'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
         'https://overpass-api.de/api/interpreter',
         'https://overpass.private.coffee/api/interpreter',
         'https://overpass.kumi.systems/api/interpreter',
-        'https://overpass.osm.ch/api/interpreter',
         'https://overpass.openstreetmap.ru/api/interpreter',
-        'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+        'https://overpass.osm.ch/api/interpreter'
     ];
 
     const firstSuccess = <T,>(promises: Promise<T>[]) =>
@@ -292,13 +292,11 @@ export const MosqueFinder: React.FC = () => {
         const token = ++fetchTokenRef.current;
         const [lat, lon] = coords;
         const dist = r * 1000;
-        const query = `[out:json][timeout:25];(
-            node["religion"="muslim"](around:${dist},${lat},${lon});
-            way["religion"="muslim"](around:${dist},${lat},${lon});
-            node["building"="mosque"](around:${dist},${lat},${lon});
-            way["building"="mosque"](around:${dist},${lat},${lon});
-            node["amenity"="mosque"](around:${dist},${lat},${lon});
-            way["amenity"="mosque"](around:${dist},${lat},${lon});
+        const queryMeters = Math.min(dist, 15000);
+        const query = `[out:json][timeout:30];(
+            nwr["religion"="muslim"](around:${queryMeters},${lat},${lon});
+            nwr["building"="mosque"](around:${queryMeters},${lat},${lon});
+            nwr["amenity"="mosque"](around:${queryMeters},${lat},${lon});
         );out center tags;`;
 
         const timers: ReturnType<typeof setTimeout>[] = [];
@@ -309,7 +307,7 @@ export const MosqueFinder: React.FC = () => {
         };
 
         const fromOverpass = firstSuccess(OVERPASS_MIRRORS.map(async (mirror): Promise<{ source: 'overpass'; data: any }> => {
-            const res = await fetch(`${mirror}?data=${encodeURIComponent(query)}`, { signal: makeAbortable(12000).signal });
+            const res = await fetch(`${mirror}?data=${encodeURIComponent(query)}`, { signal: makeAbortable(30000).signal });
             if (!res.ok) throw new Error(`status ${res.status}`);
             const data = await res.json();
             if (!data?.elements || data.elements.length === 0) throw new Error('empty result');
