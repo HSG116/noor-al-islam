@@ -704,7 +704,16 @@ export const MosqueFinder: React.FC = () => {
                                 </div>
                                 <div className="flex flex-col gap-1.5 shrink-0">
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); setInfoId(infoId === m.id ? null : String(m.id)); }}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            const opening = infoId !== m.id;
+                                            setInfoId(opening ? String(m.id) : null);
+                                            if (opening) {
+                                                setTimeout(() => {
+                                                    document.getElementById(`mosque-info-${m.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                                }, 80);
+                                            }
+                                        }}
                                         className={`w-9 h-9 md:w-11 md:h-11 rounded-xl md:rounded-2xl flex items-center justify-center transition-all border shadow-lg ${infoId === m.id
                                             ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
                                             : 'bg-white/5 text-gray-400 border-white/5 hover:bg-sky-500/20 hover:text-sky-300 hover:border-sky-500/40'}`}
@@ -725,7 +734,7 @@ export const MosqueFinder: React.FC = () => {
                             </div>
 
                             {infoId === m.id && (
-                                <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-white/10 relative z-10 space-y-2.5 md:space-y-3 animate-fade-in">
+                                <div id={`mosque-info-${m.id}`} className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-white/10 relative z-10 space-y-2.5 md:space-y-3 animate-fade-in">
                                     <div className="flex items-start gap-2 text-gray-400 text-[10px] md:text-xs font-bold">
                                         <MapPin size={13} className="text-emerald-400 shrink-0 mt-0.5" />
                                         <span className="leading-relaxed">{[m.tags['addr:street'], m.tags['addr:district'], m.tags['addr:city'], m.tags['addr:postcode']].filter(Boolean).join('، ') || 'عنوان غير محدد'}</span>
